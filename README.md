@@ -9,11 +9,11 @@
 * 文件系统操作：`create`, `mkdir`
 * 文件操作：`read`, `write`, `append`
 * Chunkserver 掉线、上线不会影响正常使用
+* Master 和 Chunkserver 的 Metadata 持久化（重启时能载入）
+* 当存活的 Replica 数目过少时进行 Re-replication
 
 以下是可选要求：
 
-* Master 和 Chunkserver 的 Metadata 持久化（重启时能载入）
-* 当存活的 Replica 数目过少时进行 Re-replication
 * Chunkserver 文件校验
 
 ## 代码框架
