@@ -14,6 +14,7 @@ type ChunkServer struct {
 	serverRoot string            // path to data storage
 	l          net.Listener
 	shutdown   chan struct{}
+    dead       bool              // set to true if server is shutdown
 
 	dl                     *downloadBuffer                // expiring download buffer
 	pendingLeaseExtensions *util.ArraySet                 // pending lease extension
@@ -71,7 +72,10 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 					conn.Close()
 				}()
 			} else {
-				//log.Fatal("accept error:", err)
+                // if chunk server is dead, ignores connection error
+                if !cs.dead {
+                    log.Fatal(err)
+                }
 			}
 		}
 	}()
@@ -109,7 +113,12 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 
 // Shutdown shuts the chunkserver down
 func (cs *ChunkServer) Shutdown() {
-	close(cs.shutdown)
+    if !cs.dead {
+        log.Warningf("ChunkServe %v shuts down", cs.address)
+        cs.dead = true
+        close(cs.shutdown)
+        cs.l.Close()
+    }
 }
 
 // RPCPushDataAndForward is called by client.
