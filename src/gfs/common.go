@@ -59,13 +59,13 @@ const (
 	LeaseExpire        = 2 * time.Second //1 * time.Minute
 	HeartbeatInterval  = 100 * time.Millisecond
 	BackgroundInterval = 200 * time.Millisecond //
-	ServerTimeout      = 1 * time.Second
+	ServerTimeout      = 1 * time.Second        //
 
-	MaxChunkSize  = 1 << 8 // 512KB DEBUG ONLY 64 << 20
+	MaxChunkSize  = 512 << 10 // 512KB DEBUG ONLY 64 << 20
 	MaxAppendSize = MaxChunkSize / 4
 
 	DefaultNumReplicas = 3
-	MinimumNumReplicas = 3
+	MinimumNumReplicas = 2
 
 	DownloadBufferExpire = 2 * time.Minute
 	DownloadBufferTick   = 10 * time.Second
