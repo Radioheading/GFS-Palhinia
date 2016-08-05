@@ -14,7 +14,7 @@ type ChunkServer struct {
 	serverRoot string            // path to data storage
 	l          net.Listener
 	shutdown   chan struct{}
-    dead       bool              // set to true if server is shutdown
+	dead       bool // set to true if server is shutdown
 
 	dl                     *downloadBuffer                // expiring download buffer
 	pendingLeaseExtensions *util.ArraySet                 // pending lease extension
@@ -56,12 +56,11 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 	}
 	cs.l = l
 
-	shutdown := make(chan struct{})
 	// RPC Handler
 	go func() {
 		for {
 			select {
-			case <-shutdown:
+			case <-cs.shutdown:
 				return
 			default:
 			}
@@ -72,10 +71,10 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 					conn.Close()
 				}()
 			} else {
-                // if chunk server is dead, ignores connection error
-                if !cs.dead {
-                    log.Fatal(err)
-                }
+				// if chunk server is dead, ignores connection error
+				if !cs.dead {
+					log.Fatal(err)
+				}
 			}
 		}
 	}()
@@ -84,7 +83,7 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 	go func() {
 		for {
 			select {
-			case <-shutdown:
+			case <-cs.shutdown:
 				return
 			default:
 			}
@@ -113,12 +112,12 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 
 // Shutdown shuts the chunkserver down
 func (cs *ChunkServer) Shutdown() {
-    if !cs.dead {
-        log.Warningf("ChunkServe %v shuts down", cs.address)
-        cs.dead = true
-        close(cs.shutdown)
-        cs.l.Close()
-    }
+	if !cs.dead {
+		log.Warningf("ChunkServer %v shuts down", cs.address)
+		cs.dead = true
+		close(cs.shutdown)
+		cs.l.Close()
+	}
 }
 
 // RPCPushDataAndForward is called by client.
