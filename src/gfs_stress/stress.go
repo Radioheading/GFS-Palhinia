@@ -118,7 +118,7 @@ func Run(cfg Config) {
 	}
 
 	// shutdown
-	waitMessage("shutdown")
+	waitMessage("Shutdown")
 	sendAck()
 	os.RemoveAll(root)
 }
