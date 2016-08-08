@@ -2,6 +2,7 @@ package gfs_stress
 
 import (
 	"crypto/md5"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -34,6 +35,17 @@ var (
 type RPCStringMessage struct {
 	ID      string
 	Message string
+}
+
+func WritePID() {
+	PIDFile := "/tmp/gfs.pid"
+	f, err := os.OpenFile(PIDFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		log.Fatalln("cannot open ", PIDFile, ":", err)
+	}
+	if _, err = f.WriteString(fmt.Sprintf("%d\n", os.Getpid())); err != nil {
+		log.Fatalln("cannot write pid", err)
+	}
 }
 
 func ReadAndChecksum(path string, start, end int) ([]byte, error) {
@@ -95,6 +107,7 @@ func asChunkserver() {
 	c = client.NewClient(gfs.ServerAddress(conf.Master))
 
 	runConsistencyWriteSuccess()
+	runConsistencyAppendSuccess()
 }
 
 func Run(cfg Config) {

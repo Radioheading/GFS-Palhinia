@@ -10,6 +10,7 @@ type ConsistencyWriteSuccess struct {
 	filePath     string
 	fileSize     int
 	maxWriteSize int
+	count        int
 	checkPoint   []ConsistencyWriteSuccess_CheckPoint
 	md5s         [][]byte
 }
@@ -22,6 +23,7 @@ type ConsistencyWriteSuccess_GetConfigReply struct {
 	FilePath      string
 	FileSize      int
 	MaxWriteSize  int
+	Count         int
 	CheckPoint    []ConsistencyWriteSuccess_CheckPoint
 	InitializerID string
 }
@@ -34,8 +36,8 @@ type ConsistencyWriteSuccess_ReportCheckPointArg struct {
 func (t *ConsistencyWriteSuccess) write() error {
 	log.Println("write")
 	buf := make([]byte, 0, t.maxWriteSize)
-	for n := 10; n > 0; n-- {
-		log.Println("n=", n)
+	for i := 0; i < t.count; i++ {
+		log.Println("i=", i)
 		size := rand.Intn(cap(buf))
 		offset := rand.Intn(t.fileSize - size)
 		buf = buf[:size]
@@ -89,6 +91,7 @@ func (t *ConsistencyWriteSuccess) run() error {
 	t.checkPoint = r1.CheckPoint
 	t.filePath = r1.FilePath
 	t.fileSize = r1.FileSize
+	t.count = r1.Count
 	t.maxWriteSize = r1.MaxWriteSize
 	if r1.InitializerID == conf.ID {
 		if err := t.initRemoteFile(); err != nil {
@@ -115,6 +118,6 @@ func runConsistencyWriteSuccess() {
 	err := t.run()
 	if err != nil {
 		log.Println("Error:", err)
-		call(conf.Center, "RPC.Fail", RPCStringMessage{conf.ID, err.Error()}, nil)
+		call(conf.Center, "RPC.ReportFailure", RPCStringMessage{conf.ID, err.Error()}, nil)
 	}
 }

@@ -8,6 +8,7 @@ import (
 )
 
 func main() {
+	gfs_stress.WritePID()
 	id := flag.String("id", "", "server ID")
 	role := flag.String("role", "", "master/chunkserver")
 	listen := flag.String("listen", "", "listen address")

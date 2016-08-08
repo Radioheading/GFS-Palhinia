@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"gfs"
 	"gfs_stress"
 	"log"
 	"math/rand"
@@ -24,6 +25,7 @@ type ConsistencyWriteSuccess struct {
 	FilePath      string
 	FileSize      int
 	MaxWriteSize  int
+	Count         int
 	InitializerID string
 
 	checkPoint []gfs_stress.ConsistencyWriteSuccess_CheckPoint
@@ -34,8 +36,9 @@ type ConsistencyWriteSuccess struct {
 func NewConsistencyWriteSuccess() (t *ConsistencyWriteSuccess) {
 	t = &ConsistencyWriteSuccess{
 		FilePath:      "/ConsistencyWriteSuccess.txt",
-		FileSize:      10 << 20, //1000000000,
-		MaxWriteSize:  1 << 20,  //128 << 20,
+		FileSize:      10 << 10, //1000000000,
+		MaxWriteSize:  1 << 10,  //128 << 20,
+		Count:         1,
 		InitializerID: chunkserverID[rand.Intn(len(chunkserverID))],
 	}
 	for n := 100; n > 0; n-- {
@@ -69,15 +72,102 @@ func (t *ConsistencyWriteSuccess) ReportCheckPoint(args gfs_stress.ConsistencyWr
 		t.md5s = args.MD5s
 	}
 	t.lock.Unlock()
-	lock.Lock()
-	ack[args.ID] = true
-	lock.Unlock()
+	ack(args.ID)
 
 	ok := reflect.DeepEqual(args.MD5s, t.md5s)
 	if !ok {
 		fail(args.ID, "different data read from different servers")
 	}
 	return nil
+}
+
+/**********************************************************
+ * ConsistencyAppendSuccess
+**********************************************************/
+
+type ConsistencyAppendSuccess struct {
+	FilePath      string
+	MaxSize       int
+	Count         int
+	InitializerID string
+
+	lock       sync.Mutex
+	maxOffset  gfs.Offset
+	checkchunk map[string][]int
+	set        map[gfs_stress.ConsistencyAppendSuccess_CheckPoint]bool
+}
+
+func NewConsistencyAppendSuccess() (t *ConsistencyAppendSuccess) {
+	t = &ConsistencyAppendSuccess{
+		FilePath:      "/ConsistencyAppendSuccess.txt",
+		MaxSize:       10 << 10, //1000000000,
+		Count:         10,
+		InitializerID: chunkserverID[rand.Intn(len(chunkserverID))],
+	}
+	return t
+}
+
+func (t *ConsistencyAppendSuccess) GetConfig(args struct{}, reply *gfs_stress.ConsistencyAppendSuccess_GetConfigReply) error {
+	reply.FilePath = t.FilePath
+	reply.MaxSize = t.MaxSize
+	reply.Count = t.Count
+	reply.InitializerID = t.InitializerID
+	return nil
+}
+
+func (t *ConsistencyAppendSuccess) generateCheckChunk() {
+	chunks := int((t.maxOffset + gfs.MaxChunkSize - 1) / gfs.MaxChunkSize)
+	avg := chunks / len(chunkserverID)
+	rest := chunks - avg*len(chunkserverID)
+	t.checkchunk = make(map[string][]int)
+	t.set = make(map[gfs_stress.ConsistencyAppendSuccess_CheckPoint]bool)
+	x := 0
+	add := func(id string) {
+		t.checkchunk[id] = append(t.checkchunk[id], x)
+		x++
+	}
+	for i, id := range chunkserverID {
+		for j := 0; j < avg; j++ {
+			add(id)
+		}
+		if i < rest {
+			add(id)
+		}
+	}
+}
+
+func (t *ConsistencyAppendSuccess) ReportOffset(args gfs_stress.ConsistencyAppendSuccess_ReportOffsetArg, reply *struct{}) error {
+	ack(args.ID)
+	t.lock.Lock()
+	if args.Offset > t.maxOffset {
+		t.maxOffset = args.Offset
+	}
+	t.lock.Unlock()
+	return nil
+}
+
+func (t *ConsistencyAppendSuccess) GetCheckChunk(args string, reply *[]int) error {
+	ack(args)
+	*reply = t.checkchunk[args]
+	return nil
+}
+
+func (t *ConsistencyAppendSuccess) ReportCheck(args gfs_stress.ConsistencyAppendSuccess_ReportCheckArg, reply *struct{}) error {
+	ack(args.ID)
+	t.lock.Lock()
+	for _, v := range args.Found {
+		t.set[v] = true
+	}
+	t.lock.Unlock()
+	return nil
+}
+
+func (t *ConsistencyAppendSuccess) check() {
+	tot := t.Count * len(chunkserverID)
+	found := len(t.set)
+	if found != tot {
+		fail("", fmt.Sprintf("should have %d records, but %d found.", tot, found))
+	}
 }
 
 /**********************************************************
@@ -88,10 +178,16 @@ var (
 	rpc_what_to_do string
 	masterID       string
 	chunkserverID  []string
-	ack            map[string]bool
+	_ack           map[string]bool
 	lock           sync.RWMutex
 	shutdown       chan struct{}
 )
+
+func ack(id string) {
+	lock.Lock()
+	_ack[id] = true
+	lock.Unlock()
+}
 
 type RPC struct{}
 
@@ -102,19 +198,22 @@ func (*RPC) WhatToDo(args struct{}, reply *string) error {
 
 func (*RPC) Acknowledge(args string, reply *struct{}) error {
 	log.Printf("RPC.Acknowledge(%v)\n", args)
-	lock.Lock()
-	ack[args] = true
-	lock.Unlock()
+	ack(args)
 	return nil
 }
 
 func (*RPC) ReportFailure(args gfs_stress.RPCStringMessage, reply *struct{}) error {
+	log.Printf("RPC.ReportFailure(%v)\n", args)
 	fail(args.ID, args.Message)
 	return nil
 }
 
 func fail(id, msg string) {
-	log.Fatalf("Fail on Node %s: %s\n", id, msg)
+	if id == "" {
+		log.Fatalf("!!!!!!!!!! Fail: %s\n", msg)
+	} else {
+		log.Fatalf("!!!!!!!!!! Fail on Node %s: %s\n", id, msg)
+	}
 }
 
 func rpcHandler(l net.Listener, rpcs *rpc.Server) {
@@ -137,7 +236,7 @@ func rpcHandler(l net.Listener, rpcs *rpc.Server) {
 }
 
 func readServers(path string) {
-	ack = make(map[string]bool)
+	_ack = make(map[string]bool)
 	f, err := os.Open(path)
 	if err != nil {
 		log.Fatal("cannot open server list file")
@@ -150,7 +249,7 @@ func readServers(path string) {
 			break
 		}
 		s = strings.TrimSpace(s)
-		ack[s] = false
+		_ack[s] = false
 		if masterID == "" {
 			masterID = s
 		} else {
@@ -167,8 +266,8 @@ func newMessage(msg string) {
 	log.Printf("newMessage(%s)\n", msg)
 	rpc_what_to_do = msg
 	lock.Lock()
-	for k := range ack {
-		ack[k] = false
+	for k := range _ack {
+		_ack[k] = false
 	}
 	lock.Unlock()
 }
@@ -176,7 +275,7 @@ func newMessage(msg string) {
 func _ensureAck(includeMaster bool) {
 	for {
 		ok := true
-		for k, v := range ack {
+		for k, v := range _ack {
 			if !v && (k != masterID || includeMaster) {
 				ok = false
 				break
@@ -195,6 +294,7 @@ func ensureAck() {
 
 func main() {
 	// Start up
+	gfs_stress.WritePID()
 	serversFile := flag.String("server-list", "servers.txt", "path to the server list file. the first line is the master and the rest are chunkservers.")
 	listen := flag.String("listen", "", "listen address")
 	flag.Parse()
@@ -229,7 +329,24 @@ func main() {
 	newMessage("ConsistencyWriteSuccess:Run")
 	ensureAck()
 
+	// Test: ConsistencyAppendSuccess
+	log.Println("========== Test: ConsistencyAppendSuccess")
+	cas := NewConsistencyAppendSuccess()
+	rpcs.Register(cas)
+	newMessage("ConsistencyAppendSuccess:GetConfig")
+	ensureAck()
+	newMessage("ConsistencyAppendSuccess:Append")
+	ensureAck()
+	cas.generateCheckChunk()
+	newMessage("ConsistencyAppendSuccess:GetCheckChunk")
+	ensureAck()
+	newMessage("ConsistencyAppendSuccess:Check")
+	ensureAck()
+	cas.check()
+
 	// Finish: Shutdown all
+	log.Println("========== Shutdown")
 	newMessage("Shutdown")
 	ensureAck()
+	log.Println("========== Well Done! You've passed all tests!")
 }
