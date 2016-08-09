@@ -13,6 +13,9 @@ type ConsistencyWriteSuccess struct {
 	count        int
 	checkPoint   []ConsistencyWriteSuccess_CheckPoint
 	md5s         [][]byte
+	initSpeed    NetSpeed
+	writeSpeed   NetSpeed
+	readSpeed    NetSpeed
 }
 
 type ConsistencyWriteSuccess_CheckPoint struct {
@@ -29,12 +32,17 @@ type ConsistencyWriteSuccess_GetConfigReply struct {
 }
 
 type ConsistencyWriteSuccess_ReportCheckPointArg struct {
-	ID   string
-	MD5s [][]byte
+	ID         string
+	MD5s       [][]byte
+	InitSpeed  NetSpeed
+	WriteSpeed NetSpeed
+	ReadSpeed  NetSpeed
 }
 
 func (t *ConsistencyWriteSuccess) write() error {
 	log.Println("write")
+	clearMonitor()
+	defer func() { _, t.writeSpeed = reportMonitor() }()
 	buf := make([]byte, 0, t.maxWriteSize)
 	for i := 0; i < t.count; i++ {
 		log.Println("i=", i)
@@ -44,7 +52,9 @@ func (t *ConsistencyWriteSuccess) write() error {
 		for i := 0; i < size; i++ {
 			buf[i] = byte(rand.Int())
 		}
+		resumeMonitor()
 		err := c.Write(gfs.Path(t.filePath), gfs.Offset(offset), buf)
+		pauseMonitor()
 		if err != nil {
 			return err
 		}
@@ -54,8 +64,12 @@ func (t *ConsistencyWriteSuccess) write() error {
 
 func (t *ConsistencyWriteSuccess) check() error {
 	log.Println("check")
+	clearMonitor()
+	defer func() { t.readSpeed, _ = reportMonitor() }()
 	for _, v := range t.checkPoint {
+		resumeMonitor()
 		hash, err := ReadAndChecksum(t.filePath, v.Start, v.End)
+		pauseMonitor()
 		if err != nil {
 			return err
 		}
@@ -70,13 +84,18 @@ func (t *ConsistencyWriteSuccess) initRemoteFile() error {
 		return err
 	}
 
+	clearMonitor()
+	defer func() { _, t.initSpeed = reportMonitor() }()
+
 	buf := make([]byte, 64<<20)
 	for offset := 0; offset < t.fileSize; offset += len(buf) {
 		d := t.fileSize - offset
 		if d < cap(buf) {
 			buf = buf[:d]
 		}
+		resumeMonitor()
 		err := c.Write(gfs.Path(t.filePath), gfs.Offset(offset), buf)
+		pauseMonitor()
 		if err != nil {
 			return err
 		}
@@ -108,7 +127,8 @@ func (t *ConsistencyWriteSuccess) run() error {
 	if err := t.check(); err != nil {
 		return err
 	}
-	call(conf.Center, "ConsistencyWriteSuccess.ReportCheckPoint", ConsistencyWriteSuccess_ReportCheckPointArg{conf.ID, t.md5s}, nil)
+	args := ConsistencyWriteSuccess_ReportCheckPointArg{conf.ID, t.md5s, t.initSpeed, t.writeSpeed, t.readSpeed}
+	call(conf.Center, "ConsistencyWriteSuccess.ReportCheckPoint", args, nil)
 	return nil
 }
 
@@ -117,7 +137,7 @@ func runConsistencyWriteSuccess() {
 	t := new(ConsistencyWriteSuccess)
 	err := t.run()
 	if err != nil {
-		log.Println("Error:", err)
 		call(conf.Center, "RPC.ReportFailure", RPCStringMessage{conf.ID, err.Error()}, nil)
+		log.Fatalln("Error:", err)
 	}
 }

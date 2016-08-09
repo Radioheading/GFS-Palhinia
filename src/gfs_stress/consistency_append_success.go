@@ -17,6 +17,8 @@ type ConsistencyAppendSuccess struct {
 	maxOffset   gfs.Offset
 	checkChunk  []int
 	checkpoints []ConsistencyAppendSuccess_CheckPoint
+	appendSpeed NetSpeed
+	readSpeed   NetSpeed
 }
 
 type ConsistencyAppendSuccess_CheckPoint struct {
@@ -30,8 +32,10 @@ type ConsistencyAppendSuccess_ReportOffsetArg struct {
 }
 
 type ConsistencyAppendSuccess_ReportCheckArg struct {
-	ID    string
-	Found []ConsistencyAppendSuccess_CheckPoint
+	ID          string
+	Found       []ConsistencyAppendSuccess_CheckPoint
+	AppendSpeed NetSpeed
+	ReadSpeed   NetSpeed
 }
 
 type ConsistencyAppendSuccess_Data struct {
@@ -58,6 +62,8 @@ func (t *ConsistencyAppendSuccess) initRemoteFile() error {
 
 func (t *ConsistencyAppendSuccess) append() error {
 	log.Println("append")
+	clearMonitor()
+	defer func() { _, t.appendSpeed = reportMonitor() }()
 	var buf bytes.Buffer
 	h := md5.New()
 	data := ConsistencyAppendSuccess_Data{
@@ -85,7 +91,9 @@ func (t *ConsistencyAppendSuccess) append() error {
 			byte((l >> 24) & 0xFF), byte((l >> 16) & 0xFF), byte((l >> 8) & 0xFF), byte(l & 0xFF)}
 		data = append(data, buf.Bytes()...)
 
+		resumeMonitor()
 		offset, err := c.Append(gfs.Path(t.FilePath), data)
+		pauseMonitor()
 		if err != nil {
 			return err
 		}
@@ -96,11 +104,15 @@ func (t *ConsistencyAppendSuccess) append() error {
 
 func (t *ConsistencyAppendSuccess) check() error {
 	log.Println("check")
+	clearMonitor()
+	defer func() { t.readSpeed, _ = reportMonitor() }()
 	r := make([]byte, 0, gfs.MaxChunkSize)
 	h := md5.New()
 	for _, idx := range t.checkChunk {
 		offset := idx * gfs.MaxChunkSize
+		resumeMonitor()
 		n, err := c.Read(gfs.Path(t.FilePath), gfs.Offset(offset), r[:cap(r)])
+		pauseMonitor()
 		r = r[:n]
 		if err != nil && err != io.EOF {
 			return err
@@ -161,7 +173,7 @@ func (t *ConsistencyAppendSuccess) run() error {
 	if err := t.check(); err != nil {
 		return err
 	}
-	arg2 := ConsistencyAppendSuccess_ReportCheckArg{conf.ID, t.checkpoints}
+	arg2 := ConsistencyAppendSuccess_ReportCheckArg{conf.ID, t.checkpoints, t.appendSpeed, t.readSpeed}
 	call(conf.Center, "ConsistencyAppendSuccess.ReportCheck", arg2, nil)
 	return nil
 }
@@ -171,7 +183,7 @@ func runConsistencyAppendSuccess() {
 	t := new(ConsistencyAppendSuccess)
 	err := t.run()
 	if err != nil {
-		log.Println("Error:", err)
 		call(conf.Center, "RPC.ReportFailure", RPCStringMessage{conf.ID, err.Error()}, nil)
+		log.Fatalln("Error:", err)
 	}
 }

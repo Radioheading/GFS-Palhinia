@@ -31,15 +31,21 @@ type ConsistencyWriteSuccess struct {
 	checkPoint []gfs_stress.ConsistencyWriteSuccess_CheckPoint
 	md5s       [][]byte
 	lock       sync.Mutex
+	initSpeed  gfs_stress.NetSpeed
+	writeSpeed gfs_stress.NetSpeed
+	readSpeed  gfs_stress.NetSpeed
 }
 
 func NewConsistencyWriteSuccess() (t *ConsistencyWriteSuccess) {
 	t = &ConsistencyWriteSuccess{
 		FilePath:      "/ConsistencyWriteSuccess.txt",
 		FileSize:      10 << 10, //1000000000,
-		MaxWriteSize:  1 << 10,  //128 << 20,
-		Count:         1,
+		MaxWriteSize:  3 << 10,  //128 << 20,
+		Count:         3,
 		InitializerID: chunkserverID[rand.Intn(len(chunkserverID))],
+		initSpeed:     gfs_stress.NewNetSpeed(),
+		writeSpeed:    gfs_stress.NewNetSpeed(),
+		readSpeed:     gfs_stress.NewNetSpeed(),
 	}
 	for n := 100; n > 0; n-- {
 		x := rand.Intn(t.FileSize)
@@ -56,6 +62,7 @@ func (t *ConsistencyWriteSuccess) GetConfig(args struct{}, reply *gfs_stress.Con
 	reply.FilePath = t.FilePath
 	reply.FileSize = t.FileSize
 	reply.MaxWriteSize = t.MaxWriteSize
+	reply.Count = t.Count
 	reply.CheckPoint = t.checkPoint
 	reply.InitializerID = t.InitializerID
 	return nil
@@ -78,7 +85,17 @@ func (t *ConsistencyWriteSuccess) ReportCheckPoint(args gfs_stress.ConsistencyWr
 	if !ok {
 		fail(args.ID, "different data read from different servers")
 	}
+	t.initSpeed.Merge(args.InitSpeed)
+	t.readSpeed.Merge(args.ReadSpeed)
+	t.writeSpeed.Merge(args.WriteSpeed)
 	return nil
+}
+
+func (t *ConsistencyWriteSuccess) success() {
+	log.Println("++++++ Pass! Statistics:")
+	log.Println("    Create File Speed:", t.initSpeed.String())
+	log.Println("          Write Speed:", t.writeSpeed.String())
+	log.Println("           Read Speed:", t.readSpeed.String())
 }
 
 /**********************************************************
@@ -91,10 +108,12 @@ type ConsistencyAppendSuccess struct {
 	Count         int
 	InitializerID string
 
-	lock       sync.Mutex
-	maxOffset  gfs.Offset
-	checkchunk map[string][]int
-	set        map[gfs_stress.ConsistencyAppendSuccess_CheckPoint]bool
+	lock        sync.Mutex
+	maxOffset   gfs.Offset
+	checkchunk  map[string][]int
+	set         map[gfs_stress.ConsistencyAppendSuccess_CheckPoint]bool
+	appendSpeed gfs_stress.NetSpeed
+	readSpeed   gfs_stress.NetSpeed
 }
 
 func NewConsistencyAppendSuccess() (t *ConsistencyAppendSuccess) {
@@ -103,6 +122,8 @@ func NewConsistencyAppendSuccess() (t *ConsistencyAppendSuccess) {
 		MaxSize:       10 << 10, //1000000000,
 		Count:         10,
 		InitializerID: chunkserverID[rand.Intn(len(chunkserverID))],
+		appendSpeed:   gfs_stress.NewNetSpeed(),
+		readSpeed:     gfs_stress.NewNetSpeed(),
 	}
 	return t
 }
@@ -159,6 +180,8 @@ func (t *ConsistencyAppendSuccess) ReportCheck(args gfs_stress.ConsistencyAppend
 		t.set[v] = true
 	}
 	t.lock.Unlock()
+	t.appendSpeed.Merge(args.AppendSpeed)
+	t.readSpeed.Merge(args.ReadSpeed)
 	return nil
 }
 
@@ -168,6 +191,9 @@ func (t *ConsistencyAppendSuccess) check() {
 	if found != tot {
 		fail("", fmt.Sprintf("should have %d records, but %d found.", tot, found))
 	}
+	log.Println("++++++ Pass! Statistics:")
+	log.Println("         Append Speed:", t.appendSpeed.String())
+	log.Println("           Read Speed:", t.readSpeed.String())
 }
 
 /**********************************************************
@@ -328,6 +354,7 @@ func main() {
 	ensureAck()
 	newMessage("ConsistencyWriteSuccess:Run")
 	ensureAck()
+	cws.success()
 
 	// Test: ConsistencyAppendSuccess
 	log.Println("========== Test: ConsistencyAppendSuccess")

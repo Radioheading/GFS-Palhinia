@@ -14,6 +14,7 @@ func main() {
 	listen := flag.String("listen", "", "listen address")
 	master := flag.String("master", "", "master address")
 	center := flag.String("center", "", "stress test center address")
+	eth := flag.String("eth", "eth0", "network interface name")
 	flag.Parse()
 
 	if *id == "" ||
@@ -29,10 +30,11 @@ func main() {
 	}
 
 	gfs_stress.Run(gfs_stress.Config{
-		ID:     *id,
-		Role:   *role,
-		Listen: *listen,
-		Master: *master,
-		Center: *center,
+		ID:           *id,
+		Role:         *role,
+		Listen:       *listen,
+		Master:       *master,
+		Center:       *center,
+		NetInterface: *eth,
 	})
 }
