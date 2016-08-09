@@ -214,6 +214,7 @@ func asChunkserver() {
 
 	runConsistencyWriteSuccess()
 	runConsistencyAppendSuccess()
+	runFaultTolerance()
 }
 
 func Run(cfg Config) {

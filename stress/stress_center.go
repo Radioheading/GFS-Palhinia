@@ -39,9 +39,9 @@ type ConsistencyWriteSuccess struct {
 func NewConsistencyWriteSuccess() (t *ConsistencyWriteSuccess) {
 	t = &ConsistencyWriteSuccess{
 		FilePath:      "/ConsistencyWriteSuccess.txt",
-		FileSize:      10 << 10, //1000000000,
-		MaxWriteSize:  3 << 10,  //128 << 20,
-		Count:         3,
+		FileSize:      3 << 10, //1000000000,
+		MaxWriteSize:  1 << 10, //128 << 20,
+		Count:         1,
 		InitializerID: chunkserverID[rand.Intn(len(chunkserverID))],
 		initSpeed:     gfs_stress.NewNetSpeed(),
 		writeSpeed:    gfs_stress.NewNetSpeed(),
@@ -119,8 +119,8 @@ type ConsistencyAppendSuccess struct {
 func NewConsistencyAppendSuccess() (t *ConsistencyAppendSuccess) {
 	t = &ConsistencyAppendSuccess{
 		FilePath:      "/ConsistencyAppendSuccess.txt",
-		MaxSize:       10 << 10, //1000000000,
-		Count:         10,
+		MaxSize:       1 << 10, //1000000000,
+		Count:         1,
 		InitializerID: chunkserverID[rand.Intn(len(chunkserverID))],
 		appendSpeed:   gfs_stress.NewNetSpeed(),
 		readSpeed:     gfs_stress.NewNetSpeed(),
@@ -186,6 +186,110 @@ func (t *ConsistencyAppendSuccess) ReportCheck(args gfs_stress.ConsistencyAppend
 }
 
 func (t *ConsistencyAppendSuccess) check() {
+	tot := t.Count * len(chunkserverID)
+	found := len(t.set)
+	if found != tot {
+		fail("", fmt.Sprintf("should have %d records, but %d found.", tot, found))
+	}
+	log.Println("++++++ Pass! Statistics:")
+	log.Println("         Append Speed:", t.appendSpeed.String())
+	log.Println("           Read Speed:", t.readSpeed.String())
+}
+
+/**********************************************************
+ * FaultTolerance
+**********************************************************/
+
+type FaultTolerance struct {
+	FilePath      string
+	MaxSize       int
+	Count         int
+	InitializerID string
+	PrDown        float64
+	MaxDownTime   time.Duration
+
+	lock        sync.Mutex
+	maxOffset   gfs.Offset
+	checkchunk  map[string][]int
+	set         map[gfs_stress.FaultTolerance_CheckPoint]bool
+	appendSpeed gfs_stress.NetSpeed
+	readSpeed   gfs_stress.NetSpeed
+}
+
+func NewFaultTolerance() (t *FaultTolerance) {
+	t = &FaultTolerance{
+		FilePath:      "/FaultTolerance.txt",
+		MaxSize:       30 << 10, //1000000000,
+		Count:         300,
+		InitializerID: chunkserverID[rand.Intn(len(chunkserverID))],
+		PrDown:        0.04,
+		MaxDownTime:   3 * time.Second,
+		appendSpeed:   gfs_stress.NewNetSpeed(),
+		readSpeed:     gfs_stress.NewNetSpeed(),
+	}
+	return t
+}
+
+func (t *FaultTolerance) GetConfig(args struct{}, reply *gfs_stress.FaultTolerance_GetConfigReply) error {
+	reply.FilePath = t.FilePath
+	reply.MaxSize = t.MaxSize
+	reply.Count = t.Count
+	reply.InitializerID = t.InitializerID
+	reply.PrDown = t.PrDown
+	reply.MaxDownTime = t.MaxDownTime
+	return nil
+}
+
+func (t *FaultTolerance) generateCheckChunk() {
+	chunks := int((t.maxOffset + gfs.MaxChunkSize - 1) / gfs.MaxChunkSize)
+	avg := chunks / len(chunkserverID)
+	rest := chunks - avg*len(chunkserverID)
+	t.checkchunk = make(map[string][]int)
+	t.set = make(map[gfs_stress.FaultTolerance_CheckPoint]bool)
+	x := 0
+	add := func(id string) {
+		t.checkchunk[id] = append(t.checkchunk[id], x)
+		x++
+	}
+	for i, id := range chunkserverID {
+		for j := 0; j < avg; j++ {
+			add(id)
+		}
+		if i < rest {
+			add(id)
+		}
+	}
+}
+
+func (t *FaultTolerance) ReportOffset(args gfs_stress.FaultTolerance_ReportOffsetArg, reply *struct{}) error {
+	ack(args.ID)
+	t.lock.Lock()
+	if args.Offset > t.maxOffset {
+		t.maxOffset = args.Offset
+	}
+	t.lock.Unlock()
+	return nil
+}
+
+func (t *FaultTolerance) GetCheckChunk(args string, reply *[]int) error {
+	ack(args)
+	*reply = t.checkchunk[args]
+	return nil
+}
+
+func (t *FaultTolerance) ReportCheck(args gfs_stress.FaultTolerance_ReportCheckArg, reply *struct{}) error {
+	ack(args.ID)
+	t.lock.Lock()
+	for _, v := range args.Found {
+		t.set[v] = true
+	}
+	t.lock.Unlock()
+	t.appendSpeed.Merge(args.AppendSpeed)
+	t.readSpeed.Merge(args.ReadSpeed)
+	return nil
+}
+
+func (t *FaultTolerance) check() {
 	tot := t.Count * len(chunkserverID)
 	found := len(t.set)
 	if found != tot {
@@ -370,6 +474,21 @@ func main() {
 	newMessage("ConsistencyAppendSuccess:Check")
 	ensureAck()
 	cas.check()
+
+	// Test: FaultTolerance
+	log.Println("========== Test: FaultTolerance")
+	ft := NewFaultTolerance()
+	rpcs.Register(ft)
+	newMessage("FaultTolerance:GetConfig")
+	ensureAck()
+	newMessage("FaultTolerance:Append")
+	ensureAck()
+	ft.generateCheckChunk()
+	newMessage("FaultTolerance:GetCheckChunk")
+	ensureAck()
+	newMessage("FaultTolerance:Check")
+	ensureAck()
+	ft.check()
 
 	// Finish: Shutdown all
 	log.Println("========== Shutdown")
