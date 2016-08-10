@@ -99,10 +99,10 @@ func (t *ConsistencyWriteSuccess) success() {
 }
 
 /**********************************************************
- * ConsistencyAppendSuccess
+ * AtomicAppendSuccess
 **********************************************************/
 
-type ConsistencyAppendSuccess struct {
+type AtomicAppendSuccess struct {
 	FilePath      string
 	MaxSize       int
 	Count         int
@@ -111,14 +111,14 @@ type ConsistencyAppendSuccess struct {
 	lock        sync.Mutex
 	maxOffset   gfs.Offset
 	checkchunk  map[string][]int
-	set         map[gfs_stress.ConsistencyAppendSuccess_CheckPoint]bool
+	set         map[gfs_stress.AtomicAppendSuccess_CheckPoint]bool
 	appendSpeed gfs_stress.NetSpeed
 	readSpeed   gfs_stress.NetSpeed
 }
 
-func NewConsistencyAppendSuccess() (t *ConsistencyAppendSuccess) {
-	t = &ConsistencyAppendSuccess{
-		FilePath:      "/ConsistencyAppendSuccess.txt",
+func NewAtomicAppendSuccess() (t *AtomicAppendSuccess) {
+	t = &AtomicAppendSuccess{
+		FilePath:      "/AtomicAppendSuccess.txt",
 		MaxSize:       1 << 10, //1000000000,
 		Count:         1,
 		InitializerID: chunkserverID[rand.Intn(len(chunkserverID))],
@@ -128,7 +128,7 @@ func NewConsistencyAppendSuccess() (t *ConsistencyAppendSuccess) {
 	return t
 }
 
-func (t *ConsistencyAppendSuccess) GetConfig(args struct{}, reply *gfs_stress.ConsistencyAppendSuccess_GetConfigReply) error {
+func (t *AtomicAppendSuccess) GetConfig(args struct{}, reply *gfs_stress.AtomicAppendSuccess_GetConfigReply) error {
 	reply.FilePath = t.FilePath
 	reply.MaxSize = t.MaxSize
 	reply.Count = t.Count
@@ -136,12 +136,12 @@ func (t *ConsistencyAppendSuccess) GetConfig(args struct{}, reply *gfs_stress.Co
 	return nil
 }
 
-func (t *ConsistencyAppendSuccess) generateCheckChunk() {
+func (t *AtomicAppendSuccess) generateCheckChunk() {
 	chunks := int((t.maxOffset + gfs.MaxChunkSize - 1) / gfs.MaxChunkSize)
 	avg := chunks / len(chunkserverID)
 	rest := chunks - avg*len(chunkserverID)
 	t.checkchunk = make(map[string][]int)
-	t.set = make(map[gfs_stress.ConsistencyAppendSuccess_CheckPoint]bool)
+	t.set = make(map[gfs_stress.AtomicAppendSuccess_CheckPoint]bool)
 	x := 0
 	add := func(id string) {
 		t.checkchunk[id] = append(t.checkchunk[id], x)
@@ -157,7 +157,7 @@ func (t *ConsistencyAppendSuccess) generateCheckChunk() {
 	}
 }
 
-func (t *ConsistencyAppendSuccess) ReportOffset(args gfs_stress.ConsistencyAppendSuccess_ReportOffsetArg, reply *struct{}) error {
+func (t *AtomicAppendSuccess) ReportOffset(args gfs_stress.AtomicAppendSuccess_ReportOffsetArg, reply *struct{}) error {
 	ack(args.ID)
 	t.lock.Lock()
 	if args.Offset > t.maxOffset {
@@ -167,13 +167,13 @@ func (t *ConsistencyAppendSuccess) ReportOffset(args gfs_stress.ConsistencyAppen
 	return nil
 }
 
-func (t *ConsistencyAppendSuccess) GetCheckChunk(args string, reply *[]int) error {
+func (t *AtomicAppendSuccess) GetCheckChunk(args string, reply *[]int) error {
 	ack(args)
 	*reply = t.checkchunk[args]
 	return nil
 }
 
-func (t *ConsistencyAppendSuccess) ReportCheck(args gfs_stress.ConsistencyAppendSuccess_ReportCheckArg, reply *struct{}) error {
+func (t *AtomicAppendSuccess) ReportCheck(args gfs_stress.AtomicAppendSuccess_ReportCheckArg, reply *struct{}) error {
 	ack(args.ID)
 	t.lock.Lock()
 	for _, v := range args.Found {
@@ -185,7 +185,7 @@ func (t *ConsistencyAppendSuccess) ReportCheck(args gfs_stress.ConsistencyAppend
 	return nil
 }
 
-func (t *ConsistencyAppendSuccess) check() {
+func (t *AtomicAppendSuccess) check() {
 	tot := t.Count * len(chunkserverID)
 	found := len(t.set)
 	if found != tot {
@@ -456,24 +456,26 @@ func main() {
 	rpcs.Register(cws)
 	newMessage("ConsistencyWriteSuccess:GetConfig")
 	ensureAck()
-	newMessage("ConsistencyWriteSuccess:Run")
+	newMessage("ConsistencyWriteSuccess:Write")
+	ensureAck()
+	newMessage("ConsistencyWriteSuccess:Check")
 	ensureAck()
 	cws.success()
 
-	// Test: ConsistencyAppendSuccess
-	log.Println("========== Test: ConsistencyAppendSuccess")
-	cas := NewConsistencyAppendSuccess()
-	rpcs.Register(cas)
-	newMessage("ConsistencyAppendSuccess:GetConfig")
+	// Test: AtomicAppendSuccess
+	log.Println("========== Test: AtomicAppendSuccess")
+	aas := NewAtomicAppendSuccess()
+	rpcs.Register(aas)
+	newMessage("AtomicAppendSuccess:GetConfig")
 	ensureAck()
-	newMessage("ConsistencyAppendSuccess:Append")
+	newMessage("AtomicAppendSuccess:Append")
 	ensureAck()
-	cas.generateCheckChunk()
-	newMessage("ConsistencyAppendSuccess:GetCheckChunk")
+	aas.generateCheckChunk()
+	newMessage("AtomicAppendSuccess:GetCheckChunk")
 	ensureAck()
-	newMessage("ConsistencyAppendSuccess:Check")
+	newMessage("AtomicAppendSuccess:Check")
 	ensureAck()
-	cas.check()
+	aas.check()
 
 	// Test: FaultTolerance
 	log.Println("========== Test: FaultTolerance")

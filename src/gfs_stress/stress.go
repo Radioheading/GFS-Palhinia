@@ -53,12 +53,18 @@ func WritePID() {
 	}
 }
 
-func ReadAndChecksum(path string, start, end int) ([]byte, error) {
+func ReadAndChecksum(path string, start, end int, monitor bool) ([]byte, error) {
 	h := md5.New()
 	buf := make([]byte, 0, 128<<20)
 	offset := start
 	for {
+		if monitor {
+			resumeMonitor()
+		}
 		n, err := c.Read(gfs.Path(path), gfs.Offset(offset), buf[:cap(buf)])
+		if monitor {
+			pauseMonitor()
+		}
 		buf = buf[:n]
 		if err != nil && err != io.EOF {
 			return nil, err
@@ -213,7 +219,7 @@ func asChunkserver() {
 	c = client.NewClient(gfs.ServerAddress(conf.Master))
 
 	runConsistencyWriteSuccess()
-	runConsistencyAppendSuccess()
+	runAtomicAppendSuccess()
 	runFaultTolerance()
 }
 

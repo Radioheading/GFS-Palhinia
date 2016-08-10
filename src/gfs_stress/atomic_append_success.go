@@ -12,47 +12,47 @@ import (
 	"reflect"
 )
 
-type ConsistencyAppendSuccess struct {
-	ConsistencyAppendSuccess_GetConfigReply
+type AtomicAppendSuccess struct {
+	AtomicAppendSuccess_GetConfigReply
 	maxOffset   gfs.Offset
 	checkChunk  []int
-	checkpoints []ConsistencyAppendSuccess_CheckPoint
+	checkpoints []AtomicAppendSuccess_CheckPoint
 	appendSpeed NetSpeed
 	readSpeed   NetSpeed
 }
 
-type ConsistencyAppendSuccess_CheckPoint struct {
+type AtomicAppendSuccess_CheckPoint struct {
 	ID    string
 	Count int
 }
 
-type ConsistencyAppendSuccess_ReportOffsetArg struct {
+type AtomicAppendSuccess_ReportOffsetArg struct {
 	ID     string
 	Offset gfs.Offset
 }
 
-type ConsistencyAppendSuccess_ReportCheckArg struct {
+type AtomicAppendSuccess_ReportCheckArg struct {
 	ID          string
-	Found       []ConsistencyAppendSuccess_CheckPoint
+	Found       []AtomicAppendSuccess_CheckPoint
 	AppendSpeed NetSpeed
 	ReadSpeed   NetSpeed
 }
 
-type ConsistencyAppendSuccess_Data struct {
+type AtomicAppendSuccess_Data struct {
 	ID       string
 	Count    int
 	Data     []byte
 	Checksum []byte
 }
 
-type ConsistencyAppendSuccess_GetConfigReply struct {
+type AtomicAppendSuccess_GetConfigReply struct {
 	FilePath      string
 	MaxSize       int
 	Count         int
 	InitializerID string
 }
 
-func (t *ConsistencyAppendSuccess) initRemoteFile() error {
+func (t *AtomicAppendSuccess) initRemoteFile() error {
 	log.Println("initRemoteFile")
 	if err := c.Create(gfs.Path(t.FilePath)); err != nil {
 		return err
@@ -60,13 +60,13 @@ func (t *ConsistencyAppendSuccess) initRemoteFile() error {
 	return nil
 }
 
-func (t *ConsistencyAppendSuccess) append() error {
+func (t *AtomicAppendSuccess) append() error {
 	log.Println("append")
 	clearMonitor()
 	defer func() { _, t.appendSpeed = reportMonitor() }()
 	var buf bytes.Buffer
 	h := md5.New()
-	data := ConsistencyAppendSuccess_Data{
+	data := AtomicAppendSuccess_Data{
 		ID:   conf.ID,
 		Data: make([]byte, 0, t.MaxSize),
 	}
@@ -102,7 +102,7 @@ func (t *ConsistencyAppendSuccess) append() error {
 	return nil
 }
 
-func (t *ConsistencyAppendSuccess) check() error {
+func (t *AtomicAppendSuccess) check() error {
 	log.Println("check")
 	clearMonitor()
 	defer func() { t.readSpeed, _ = reportMonitor() }()
@@ -132,7 +132,7 @@ func (t *ConsistencyAppendSuccess) check() error {
 			data := r[p+8 : p+8+len]
 			buf := bytes.NewBuffer(data)
 			dec := gob.NewDecoder(buf)
-			var d ConsistencyAppendSuccess_Data
+			var d AtomicAppendSuccess_Data
 			if err := dec.Decode(&d); err != nil {
 				return err
 			}
@@ -140,18 +140,18 @@ func (t *ConsistencyAppendSuccess) check() error {
 			if !reflect.DeepEqual(checksum, d.Checksum) {
 				return fmt.Errorf("checksum differs")
 			}
-			t.checkpoints = append(t.checkpoints, ConsistencyAppendSuccess_CheckPoint{d.ID, d.Count})
+			t.checkpoints = append(t.checkpoints, AtomicAppendSuccess_CheckPoint{d.ID, d.Count})
 			p += len + 8
 		}
 	}
 	return nil
 }
 
-func (t *ConsistencyAppendSuccess) run() error {
-	waitMessage("ConsistencyAppendSuccess:GetConfig")
-	var r1 ConsistencyAppendSuccess_GetConfigReply
-	call(conf.Center, "ConsistencyAppendSuccess.GetConfig", struct{}{}, &r1)
-	t.ConsistencyAppendSuccess_GetConfigReply = r1
+func (t *AtomicAppendSuccess) run() error {
+	waitMessage("AtomicAppendSuccess:GetConfig")
+	var r1 AtomicAppendSuccess_GetConfigReply
+	call(conf.Center, "AtomicAppendSuccess.GetConfig", struct{}{}, &r1)
+	t.AtomicAppendSuccess_GetConfigReply = r1
 	if r1.InitializerID == conf.ID {
 		if err := t.initRemoteFile(); err != nil {
 			return err
@@ -159,28 +159,28 @@ func (t *ConsistencyAppendSuccess) run() error {
 	}
 	sendAck()
 
-	waitMessage("ConsistencyAppendSuccess:Append")
+	waitMessage("AtomicAppendSuccess:Append")
 	if err := t.append(); err != nil {
 		return err
 	}
-	arg1 := ConsistencyAppendSuccess_ReportOffsetArg{conf.ID, t.maxOffset}
-	call(conf.Center, "ConsistencyAppendSuccess.ReportOffset", arg1, nil)
+	arg1 := AtomicAppendSuccess_ReportOffsetArg{conf.ID, t.maxOffset}
+	call(conf.Center, "AtomicAppendSuccess.ReportOffset", arg1, nil)
 
-	waitMessage("ConsistencyAppendSuccess:GetCheckChunk")
-	call(conf.Center, "ConsistencyAppendSuccess.GetCheckChunk", conf.ID, &t.checkChunk)
+	waitMessage("AtomicAppendSuccess:GetCheckChunk")
+	call(conf.Center, "AtomicAppendSuccess.GetCheckChunk", conf.ID, &t.checkChunk)
 
-	waitMessage("ConsistencyAppendSuccess:Check")
+	waitMessage("AtomicAppendSuccess:Check")
 	if err := t.check(); err != nil {
 		return err
 	}
-	arg2 := ConsistencyAppendSuccess_ReportCheckArg{conf.ID, t.checkpoints, t.appendSpeed, t.readSpeed}
-	call(conf.Center, "ConsistencyAppendSuccess.ReportCheck", arg2, nil)
+	arg2 := AtomicAppendSuccess_ReportCheckArg{conf.ID, t.checkpoints, t.appendSpeed, t.readSpeed}
+	call(conf.Center, "AtomicAppendSuccess.ReportCheck", arg2, nil)
 	return nil
 }
 
-func runConsistencyAppendSuccess() {
-	log.Println("========== Test: ConsistencyAppendSuccess")
-	t := new(ConsistencyAppendSuccess)
+func runAtomicAppendSuccess() {
+	log.Println("========== Test: AtomicAppendSuccess")
+	t := new(AtomicAppendSuccess)
 	err := t.run()
 	if err != nil {
 		call(conf.Center, "RPC.ReportFailure", RPCStringMessage{conf.ID, err.Error()}, nil)
