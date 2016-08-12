@@ -53,15 +53,24 @@ func WritePID() {
 	}
 }
 
+var buf_ReadAndChecksum = make([]byte, 0, 64<<20)
+
+func min(a, b int) int {
+	if a <= b {
+		return a
+	}
+	return b
+}
+
 func ReadAndChecksum(path string, start, end int, monitor bool) ([]byte, error) {
 	h := md5.New()
-	buf := make([]byte, 0, 128<<20)
 	offset := start
-	for {
+	buf := buf_ReadAndChecksum
+	for offset < end {
 		if monitor {
 			resumeMonitor()
 		}
-		n, err := c.Read(gfs.Path(path), gfs.Offset(offset), buf[:cap(buf)])
+		n, err := c.Read(gfs.Path(path), gfs.Offset(offset), buf[:min(cap(buf), end-offset)])
 		if monitor {
 			pauseMonitor()
 		}
@@ -73,6 +82,7 @@ func ReadAndChecksum(path string, start, end int, monitor bool) ([]byte, error) 
 		if err == io.EOF {
 			break
 		}
+		offset += n
 	}
 	return h.Sum(nil), nil
 }

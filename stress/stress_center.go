@@ -39,15 +39,15 @@ type ConsistencyWriteSuccess struct {
 func NewConsistencyWriteSuccess() (t *ConsistencyWriteSuccess) {
 	t = &ConsistencyWriteSuccess{
 		FilePath:      "/ConsistencyWriteSuccess.txt",
-		FileSize:      3 << 10, //1000000000,
-		MaxWriteSize:  1 << 10, //128 << 20,
-		Count:         1,
+		FileSize:      1 << 30,
+		MaxWriteSize:  128 << 20,
+		Count:         10,
 		InitializerID: chunkserverID[rand.Intn(len(chunkserverID))],
 		initSpeed:     gfs_stress.NewNetSpeed(),
 		writeSpeed:    gfs_stress.NewNetSpeed(),
 		readSpeed:     gfs_stress.NewNetSpeed(),
 	}
-	for n := 100; n > 0; n-- {
+	for n := 30; n > 0; n-- {
 		x := rand.Intn(t.FileSize)
 		y := rand.Intn(t.FileSize)
 		if x > y {
@@ -119,8 +119,8 @@ type AtomicAppendSuccess struct {
 func NewAtomicAppendSuccess() (t *AtomicAppendSuccess) {
 	t = &AtomicAppendSuccess{
 		FilePath:      "/AtomicAppendSuccess.txt",
-		MaxSize:       1 << 10, //1000000000,
-		Count:         1,
+		MaxSize:       1 << 20,
+		Count:         5,
 		InitializerID: chunkserverID[rand.Intn(len(chunkserverID))],
 		appendSpeed:   gfs_stress.NewNetSpeed(),
 		readSpeed:     gfs_stress.NewNetSpeed(),
@@ -219,11 +219,11 @@ type FaultTolerance struct {
 func NewFaultTolerance() (t *FaultTolerance) {
 	t = &FaultTolerance{
 		FilePath:      "/FaultTolerance.txt",
-		MaxSize:       30 << 10, //1000000000,
-		Count:         300,
+		MaxSize:       5 << 20,
+		Count:         100,
 		InitializerID: chunkserverID[rand.Intn(len(chunkserverID))],
-		PrDown:        0.04,
-		MaxDownTime:   3 * time.Second,
+		PrDown:        0.02,
+		MaxDownTime:   10 * time.Second,
 		appendSpeed:   gfs_stress.NewNetSpeed(),
 		readSpeed:     gfs_stress.NewNetSpeed(),
 	}
@@ -449,6 +449,8 @@ func main() {
 	// Start up: Wait until all online
 	newMessage("wait")
 	_ensureAck(true)
+	log.Println("Wait 5 Seconds...")
+	time.Sleep(5 * time.Second)
 
 	// Test: ConsistencyWriteSuccess
 	log.Println("========== Test: ConsistencyWriteSuccess")

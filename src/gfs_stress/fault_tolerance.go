@@ -160,10 +160,10 @@ func (t *FaultTolerance) faultMaker() {
 		default:
 		}
 		if rand.Float64() < t.PrDown {
-			fmt.Println("Shutdown Chunkserver")
+			log.Println("Shutdown Chunkserver")
 			cs.Shutdown()
 			time.Sleep(t.MaxDownTime)
-			fmt.Println("Restart Chunkserver")
+			log.Println("Restart Chunkserver")
 			cs = chunkserver.NewAndServe(gfs.ServerAddress(conf.Listen), gfs.ServerAddress(conf.Master), root)
 		}
 		time.Sleep(1 * time.Second)
