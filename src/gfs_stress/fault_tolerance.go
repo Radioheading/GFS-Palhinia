@@ -139,7 +139,7 @@ func (t *FaultTolerance) check() error {
 			dec := gob.NewDecoder(buf)
 			var d FaultTolerance_Data
 			if err := dec.Decode(&d); err != nil {
-				return err
+				continue
 			}
 			checksum := h.Sum(d.Data)
 			if !reflect.DeepEqual(checksum, d.Checksum) {
