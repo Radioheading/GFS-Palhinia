@@ -1,14 +1,13 @@
 package master
 
 import (
-	"fmt"
-	log "github.com/Sirupsen/logrus"
 	"net"
 	"net/rpc"
 	"time"
 
+	log "github.com/sirupsen/logrus"
+
 	"gfs"
-	"gfs/util"
 )
 
 // Master Server struct
@@ -96,35 +95,63 @@ func (m *Master) Shutdown() {
 // BackgroundActivity does all the background activities:
 // dead chunkserver handling, garbage collection, stale replica detection, etc
 func (m *Master) BackgroundActivity() error {
+	return nil
 }
 
 // RPCHeartbeat is called by chunkserver to let the master know that a chunkserver is alive.
 // Lease extension request is included.
 func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) error {
+	m.csm.Heartbeat(args.Address)
+	return nil;
+	// todo: lease extension
 }
 
 // RPCGetPrimaryAndSecondaries returns lease holder and secondaries of a chunk.
 // If no one holds the lease currently, grant one.
 func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesArg, reply *gfs.GetPrimaryAndSecondariesReply) error {
+	log.Infof("RPCGetPrimaryAndSecondaries %v", args.Handle)
+	lease, err := m.cm.GetLeaseHolder(args.Handle)
+	if err != nil {
+		return err
+	}
+	reply.Primary = lease.primary
+	reply.Secondaries = lease.secondaries
+	reply.Expire = lease.expire
+	return nil
 }
 
 // RPCGetReplicas is called by client to find all chunkservers that hold the chunk.
 func (m *Master) RPCGetReplicas(args gfs.GetReplicasArg, reply *gfs.GetReplicasReply) error {
+	// todo: further check
+	log.Infof("RPCGetReplicas %v", args.Handle)
+	_, err := m.cm.GetReplicas(args.Handle)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // RPCCreateFile is called by client to create a new file
 func (m *Master) RPCCreateFile(args gfs.CreateFileArg, replay *gfs.CreateFileReply) error {
+	err := m.nm.CreateFile(args.Path)
+	return err
 }
 
 // RPCMkdir is called by client to make a new directory
 func (m *Master) RPCMkdir(args gfs.MkdirArg, replay *gfs.MkdirReply) error {
+	err := m.nm.Mkdir(args.Path)
+	return err
 }
 
 // RPCGetFileInfo is called by client to get file information
 func (m *Master) RPCGetFileInfo(args gfs.GetFileInfoArg, reply *gfs.GetFileInfoReply) error {
+	err := m.nm.GetFileInfo(args.Path, reply)
+	return err
 }
 
 // RPCGetChunkHandle returns the chunk handle of (path, index).
 // If the requested index is bigger than the number of chunks of this path by exactly one, create one.
 func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChunkHandleReply) error {
+	// todo
+	return nil
 }

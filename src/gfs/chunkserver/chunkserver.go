@@ -1,7 +1,12 @@
 package chunkserver
 
 import (
-	log "github.com/Sirupsen/logrus"
+	"net"
+	"net/rpc"
+	"sync"
+	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"gfs"
 	"gfs/util"
@@ -124,24 +129,29 @@ func (cs *ChunkServer) Shutdown() {
 // It saves client pushed data to memory buffer and forward to all other replicas.
 // Returns a DataID which represents the index in the memory buffer.
 func (cs *ChunkServer) RPCPushDataAndForward(args gfs.PushDataAndForwardArg, reply *gfs.PushDataAndForwardReply) error {
+	return nil;
 }
 
 // RPCForwardData is called by another replica who sends data to the current memory buffer.
 // TODO: This should be replaced by a chain forwarding.
 func (cs *ChunkServer) RPCForwardData(args gfs.ForwardDataArg, reply *gfs.ForwardDataReply) error {
+	return nil;
 }
 
 // RPCCreateChunk is called by master to create a new chunk given the chunk handle.
 func (cs *ChunkServer) RPCCreateChunk(args gfs.CreateChunkArg, reply *gfs.CreateChunkReply) error {
+	return nil;
 }
 
 // RPCReadChunk is called by client, read chunk data and return
 func (cs *ChunkServer) RPCReadChunk(args gfs.ReadChunkArg, reply *gfs.ReadChunkReply) error {
+	return nil
 }
 
 // RPCWriteChunk is called by client
 // applies chunk write to itself (primary) and asks secondaries to do the same.
 func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChunkReply) error {
+	return nil
 }
 
 // RPCAppendChunk is called by client to apply atomic record append.
@@ -149,17 +159,21 @@ func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChu
 // If the chunk size after appending the data will excceed the limit,
 // pad current chunk and ask the client to retry on the next chunk.
 func (cs *ChunkServer) RPCAppendChunk(args gfs.AppendChunkArg, reply *gfs.AppendChunkReply) error {
+	return nil
 }
 
 // RPCApplyWriteChunk is called by primary to apply mutations
 func (cs *ChunkServer) RPCApplyMutation(args gfs.ApplyMutationArg, reply *gfs.ApplyMutationReply) error {
+	return nil
 }
 
 // RPCSendCCopy is called by master, send the whole copy to given address
 func (cs *ChunkServer) RPCSendCopy(args gfs.SendCopyArg, reply *gfs.SendCopyReply) error {
+	return nil
 }
 
 // RPCSendCCopy is called by another replica
 // rewrite the local version to given copy data
 func (cs *ChunkServer) RPCApplyCopy(args gfs.ApplyCopyArg, reply *gfs.ApplyCopyReply) error {
+	return nil
 }
