@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"gfs"
 	"gfs/util"
 )
@@ -59,10 +60,43 @@ func (c *Client) GetChunkHandle(path gfs.Path, index gfs.ChunkIndex) (gfs.ChunkH
 	return reply.Handle, err
 }
 
+func (c *Client) GetChunkReplicas(handle gfs.ChunkHandle) ([]gfs.ServerAddress, error) {
+	reply := &gfs.GetReplicasReply{}
+	err := util.Call(c.master, "Master.RPCGetReplicas", gfs.GetReplicasArg{Handle: handle}, reply)
+	return reply.Locations, err
+}
+
 // ReadChunk reads data from the chunk at specific offset.
 // len(data)+offset  should be within chunk size.
 func (c *Client) ReadChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byte) (int, error) {
-	return 0, nil;
+	location, err := c.GetChunkReplicas(handle)
+	if err != nil {
+		return 0, err;
+	}
+
+	if len(data) + int(offset) > gfs.MaxChunkSize {
+		return 0, fmt.Errorf("ReadChunk: read exceeds chunk size")
+	}
+
+	if len(location) == 0 {
+		return 0, fmt.Errorf("ReadChunk: no replica available")
+	}
+
+	index := 0
+
+	r := &gfs.ReadChunkReply{Data: data}
+	err = util.Call(location[index], "ChunkServer.RPCReadChunk", gfs.ReadChunkArg{Handle: handle, Offset: offset, Length: int(len(data))}, &r)
+	
+	if r.ErrorCode == gfs.ReadEOF {
+		return len(r.Data), gfs.Error{Code: gfs.ReadEOF, Err: "ReadChunk: read EOF"}
+	}
+	
+	if err != nil {
+		return 0, err;
+	}
+	
+	return len(r.Data), nil;
+
 }
 
 // WriteChunk writes data to the chunk at specific offset.
