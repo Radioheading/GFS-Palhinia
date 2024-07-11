@@ -1,11 +1,14 @@
 package master
 
 import (
+	// "fmt"
+	"fmt"
 	"gfs"
 	"gfs/util"
 	"sync"
 	"time"
-	// log "github.com/sirupsen/logrus"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // chunkServerManager manages chunkservers
@@ -27,21 +30,49 @@ type chunkServerInfo struct {
 }
 
 // Hearbeat marks the chunkserver alive for now.
-func (csm *chunkServerManager) Heartbeat(addr gfs.ServerAddress) {
+func (csm *chunkServerManager) Heartbeat(addr gfs.ServerAddress) bool {
 	csm.Lock()
 	defer csm.Unlock()
-	if _, ok := csm.servers[addr]; !ok {
+	if server, ok := csm.servers[addr]; !ok {
 		csm.servers[addr] = &chunkServerInfo{
 			lastHeartbeat: time.Now(),
 			chunks:        make(map[gfs.ChunkHandle]bool),
 		}
+
+		return true
 	} else {
-		csm.servers[addr].lastHeartbeat = time.Now()
+		server.lastHeartbeat = time.Now()
+		return false
 	}
 }
 
 // AddChunk creates a chunk on given chunkservers
 func (csm *chunkServerManager) AddChunk(addrs []gfs.ServerAddress, handle gfs.ChunkHandle) error {
+	csm.Lock()
+	defer csm.Unlock()
+	for _, addr := range addrs {
+		if server, ok := csm.servers[addr]; ok {
+			if checker, ok := server.chunks[handle]; !ok || !checker {
+				server.chunks[handle] = true
+			}
+			log.Warning("Chunk ", handle, " already exists on ", addr)
+		}
+	}
+	return nil
+}
+
+// RemoveChunk removes a chunk on given chunkservers
+func (csm *chunkServerManager) RemoveChunk(addrs []gfs.ServerAddress, handle gfs.ChunkHandle) error {
+	csm.Lock()
+	defer csm.Unlock()
+	for _, addr := range addrs {
+		if server, ok := csm.servers[addr]; ok {
+			if checker, ok := server.chunks[handle]; ok && checker {
+				server.chunks[handle] = false
+			}
+			log.Warning("Chunk ", handle, " already exists on ", addr)
+		}
+	}
 	return nil
 }
 
@@ -49,7 +80,36 @@ func (csm *chunkServerManager) AddChunk(addrs []gfs.ServerAddress, handle gfs.Ch
 // called when the replicas number of a chunk is less than gfs.MinimumNumReplicas
 // returns two server address, the master will call 'from' to send a copy to 'to'
 func (csm *chunkServerManager) ChooseReReplication(handle gfs.ChunkHandle) (from, to gfs.ServerAddress, err error) {
-	return "", "", nil
+	csm.RLock()
+	defer csm.RUnlock()
+
+	from = ""
+	to = ""
+	err = nil
+
+	done1 := false
+	done2 := false
+
+	for addr, server := range csm.servers {
+		if checker, ok := server.chunks[handle]; ok && checker {
+			from = addr
+			done1 = true
+			if done2 {
+				return
+			}
+		} else {
+			to = addr
+			done2 = true
+			if done1 {
+				return
+			}
+		}
+		if from != "" && to != "" {
+			return
+		}
+	}
+	err = fmt.Errorf("ChooseReReplication: no enough chunkservers")
+	return
 }
 
 // ChooseServers returns servers to store new chunk.
@@ -75,11 +135,33 @@ func (csm *chunkServerManager) ChooseServers(num int) ([]gfs.ServerAddress, erro
 
 // DetectDeadServers detects disconnected chunkservers according to last heartbeat time
 func (csm *chunkServerManager) DetectDeadServers() []gfs.ServerAddress {
-	return nil
+	csm.RLock()
+	defer csm.RUnlock()
+
+	deads := make([]gfs.ServerAddress, 0)
+	for addr, server := range csm.servers {
+		if server.lastHeartbeat.Add(gfs.ServerTimeout).Before(time.Now()) {
+			deads = append(deads, addr)
+		}
+	}
+
+	return deads
 }
 
 // RemoveServers removes metedata of a disconnected chunkserver.
 // It returns the chunks that server holds
 func (csm *chunkServerManager) RemoveServer(addr gfs.ServerAddress) (handles []gfs.ChunkHandle, err error) {
-	return nil, nil
+	csm.Lock()
+	defer csm.Unlock()
+
+	if server, ok := csm.servers[addr]; ok {
+		for handle, checker := range server.chunks {
+			if checker {
+				handles = append(handles, handle)
+			}
+		}
+	}
+
+	err = fmt.Errorf("RemoveServer: no such server")
+	return
 }

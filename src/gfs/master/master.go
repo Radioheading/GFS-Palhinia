@@ -109,14 +109,21 @@ func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) 
 // RPCGetPrimaryAndSecondaries returns lease holder and secondaries of a chunk.
 // If no one holds the lease currently, grant one.
 func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesArg, reply *gfs.GetPrimaryAndSecondariesReply) error {
-	log.Infof("RPCGetPrimaryAndSecondaries %v", args.Handle)
-	lease, err := m.cm.GetLeaseHolder(args.Handle)
+	stales, lease, err := m.cm.GetLeaseHolder(args.Handle)
 	if err != nil {
 		return err
 	}
-	reply.Primary = lease.primary
-	reply.Secondaries = lease.secondaries
-	reply.Expire = lease.expire
+	m.csm.RemoveChunk(stales, args.Handle)
+	for _, staleServer := range stales {
+		err := m.csm.AddGarbage(staleServer, args.Handle)
+		if err != nil {
+			return err
+		}
+	}
+
+	reply.Primary = lease.Primary
+	reply.Secondaries = lease.Secondaries
+	reply.Expire = lease.Expire
 	return nil
 }
 

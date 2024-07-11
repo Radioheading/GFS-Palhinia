@@ -102,7 +102,11 @@ func (c *Client) ReadChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byt
 // WriteChunk writes data to the chunk at specific offset.
 // len(data)+offset should be within chunk size.
 func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byte) error {
-	return nil;
+	if len(data) + int(offset) > gfs.MaxChunkSize { // len(data) + offset should be within chunk size
+		return fmt.Errorf("WriteChunk: write exceeds chunk size")
+	}
+
+	
 }
 
 // AppendChunk appends data to a chunk.

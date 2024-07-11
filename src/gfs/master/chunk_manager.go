@@ -61,8 +61,12 @@ func (cm *chunkManager) GetChunk(path gfs.Path, index gfs.ChunkIndex) (gfs.Chunk
 // GetLeaseHolder returns the chunkserver that hold the lease of a chunk
 // (i.e. primary) and expire time of the lease. If no one has a lease,
 // grants one to a replica it chooses.
-func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
-	return nil, nil
+func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) ([] gfs.ServerAddress, *lease, error) {
+	cm.Rlock();
+	ck, ok := cm.chunk[handle];
+	cm.RUnlock();
+	
+	
 }
 
 // ExtendLease extends the lease of chunk if the lease holder is primary.

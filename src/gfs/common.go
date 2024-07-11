@@ -54,6 +54,12 @@ func (e Error) Error() string {
 	return e.Err
 }
 
+type Lease struct {
+	Primary     ServerAddress
+	Expire      time.Time
+	Secondaries []ServerAddress
+}
+
 // system config
 const (
 	LeaseExpire        = 2 * time.Second //1 * time.Minute
