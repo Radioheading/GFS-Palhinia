@@ -121,9 +121,9 @@ func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesAr
 		}
 	}
 
-	reply.Primary = lease.Primary
-	reply.Secondaries = lease.Secondaries
-	reply.Expire = lease.Expire
+	reply.Primary = lease.primary
+	reply.Secondaries = lease.secondaries
+	reply.Expire = lease.expire
 	return nil
 }
 
@@ -132,15 +132,12 @@ func (m *Master) RPCGetReplicas(args gfs.GetReplicasArg, reply *gfs.GetReplicasR
 	// todo: further check
 	log.Infof("RPCGetReplicas %v", args.Handle)
 	_, err := m.cm.GetReplicas(args.Handle)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 // RPCCreateFile is called by client to create a new file
 func (m *Master) RPCCreateFile(args gfs.CreateFileArg, replay *gfs.CreateFileReply) error {
-	err := m.nm.CreateFile(args.Path)
+	err := m.nm.Create(args.Path)
 	return err
 }
 
@@ -151,6 +148,7 @@ func (m *Master) RPCMkdir(args gfs.MkdirArg, replay *gfs.MkdirReply) error {
 }
 
 // RPCGetFileInfo is called by client to get file information
+// todo: GetFileInfo
 func (m *Master) RPCGetFileInfo(args gfs.GetFileInfoArg, reply *gfs.GetFileInfoReply) error {
 	err := m.nm.GetFileInfo(args.Path, reply)
 	return err
