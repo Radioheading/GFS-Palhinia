@@ -4,17 +4,23 @@ import (
 	"fmt"
 	"gfs"
 	"gfs/util"
+	"io"
+	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // Client struct is the GFS client-side driver
 type Client struct {
 	master gfs.ServerAddress
+	buffer *LeaseBuffer
 }
 
 // NewClient returns a new gfs client.
 func NewClient(master gfs.ServerAddress) *Client {
 	return &Client{
 		master: master,
+		buffer: newLeaseBuffer(master, gfs.LeaseBufferTick),
 	}
 }
 
@@ -38,8 +44,67 @@ func (c *Client) List(path gfs.Path) ([]gfs.PathInfo, error) {
 // Read reads the file at specific offset.
 // It reads up to len(data) bytes form the File.
 // It return the number of bytes, and an error if any.
+
 func (c *Client) Read(path gfs.Path, offset gfs.Offset, data []byte) (n int, err error) {
-	return 0, nil;
+	start := int(offset) / gfs.MaxChunkSize
+	end := (int(offset) + len(data) - 1) / gfs.MaxChunkSize
+	cur := start
+	cur_read := 0
+	for cur <= end {
+		var handle gfs.ChunkHandle
+		var err error
+		handle, err = c.GetChunkHandle(path, gfs.ChunkIndex(cur))
+		
+		if err != nil {
+			return 0, err
+		}
+		// read range [lhs, rhs]
+		var lhs int
+		var rhs int
+
+		if cur == start {
+			lhs = int(offset)
+		} else {
+			lhs = cur * gfs.MaxChunkSize
+		}
+
+		if cur == end {
+			rhs = int(offset) + len(data)
+		} else {
+			rhs = (cur + 1) * gfs.MaxChunkSize
+		}
+
+		var data_read int
+		var new_err   error
+
+		for { // read until we reach success
+			data_read, new_err = c.ReadChunk(handle, gfs.Offset(lhs % gfs.MaxChunkSize), data[cur_read : cur_read + rhs - lhs])
+
+			if new_err == nil {
+				break
+			}
+
+			if e, ok := new_err.(gfs.Error); ok && e.Code == gfs.ReadEOF {
+				break
+			}
+
+			time.Sleep(gfs.RetryInterval)
+			log.Info("retry read ", err)
+		}
+
+		cur++
+		cur_read += data_read
+
+		if err != nil {
+			break
+		}
+	}
+
+	if err != nil {
+		return cur_read, io.EOF
+	}
+
+	return cur_read, err
 }
 
 // Write writes data to the file at specific offset.
@@ -105,13 +170,82 @@ func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []by
 	if len(data) + int(offset) > gfs.MaxChunkSize { // len(data) + offset should be within chunk size
 		return fmt.Errorf("WriteChunk: write exceeds chunk size")
 	}
-
 	
+	leaseBuf, err := c.buffer.GetLease(handle)
+
+	if err != nil {
+		return err
+	}
+
+	chain := append(leaseBuf.Secondaries, leaseBuf.Primary)
+
+	// PushDataAndForward, we send the data to memory buffer and send it to all secondaries
+	pushDataReply := &gfs.PushDataAndForwardReply{}
+
+	err = util.Call(chain[0], "ChunkServer.RPCPushDataAndForward", gfs.PushDataAndForwardArg{Handle: handle, Data: data, ForwardTo: chain}, pushDataReply)
+	if err != nil {
+		return err
+	}
+
+	// write to primary
+	r := &gfs.WriteChunkReply{}
+	args := gfs.WriteChunkArg{DataID: pushDataReply.DataID, Offset: offset, Secondaries: leaseBuf.Secondaries}
+
+	err = util.Call(leaseBuf.Primary, "ChunkServer.RPCWriteChunk", args, r)
+
+	if err != nil {
+		return err
+	}
+
+	if r.ErrorCode == gfs.WriteExceedChunkSize {
+		return gfs.Error{Code: r.ErrorCode, Err: "ExceedChunkSize!"}
+	}
+
+	if r.ErrorCode == gfs.LeaseHasExpired {
+		return gfs.Error{Code: r.ErrorCode, Err: "Lease Expiration in WriteChunk"}
+	}
+
+	return nil
 }
 
 // AppendChunk appends data to a chunk.
 // Chunk offset of the start of data will be returned if success.
 // len(data) should be within max append size.
 func (c *Client) AppendChunk(handle gfs.ChunkHandle, data []byte) (offset gfs.Offset, err error) {
-	return offset, nil;
+	if len(data) >= gfs.MaxAppendSize {
+		return 0, fmt.Errorf("AppendChunk: Out of Size")
+	}
+
+	leaseBuf, err := c.buffer.GetLease(handle)
+
+	if err != nil {
+		return 0, err
+	}
+
+	chain := append(leaseBuf.Secondaries, leaseBuf.Primary)
+
+	// PushDataAndForward, we send the data to memory buffer and send it to all secondaries
+	pushDataReply := &gfs.PushDataAndForwardReply{}
+
+	err = util.Call(chain[0], "ChunkServer.RPCPushDataAndForward", gfs.PushDataAndForwardArg{Handle: handle, Data: data, ForwardTo: chain}, pushDataReply)
+	if err != nil {
+		return 0, err
+	}
+
+	// append to chunks
+	args := gfs.AppendChunkArg{DataID: pushDataReply.DataID, Secondaries: leaseBuf.Secondaries}
+	r := &gfs.AppendChunkReply{}
+
+	err = util.Call(leaseBuf.Primary, "ChunkServer.RPCAppendChunk", args, r)
+
+	if r.ErrorCode == gfs.AppendExceedChunkSize {
+		return r.Offset, gfs.Error{Code: r.ErrorCode, Err: "AppendExceedChunkSize!"}
+	}
+
+	if r.ErrorCode == gfs.LeaseHasExpired {
+		return r.Offset, gfs.Error{Code: r.ErrorCode, Err: "Append Failed Because Lease Has Expired"}
+	}
+
+	return r.Offset, nil
+
 }

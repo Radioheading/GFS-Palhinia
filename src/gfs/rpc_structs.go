@@ -17,8 +17,9 @@ type PushDataAndForwardReply struct {
 }
 
 type ForwardDataArg struct {
-	DataID DataBufferID
-	Data   []byte
+	DataID 	   DataBufferID
+	Data   	   []byte
+	ChainOrder []ServerAddress
 }
 type ForwardDataReply struct {
 	ErrorCode ErrorCode
