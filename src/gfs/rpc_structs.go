@@ -17,8 +17,8 @@ type PushDataAndForwardReply struct {
 }
 
 type ForwardDataArg struct {
-	DataID 	   DataBufferID
-	Data   	   []byte
+	DataID     DataBufferID
+	Data       []byte
 	ChainOrder []ServerAddress
 }
 type ForwardDataReply struct {
@@ -66,7 +66,6 @@ type PadChunkArg struct {
 type PadChunkReply struct {
 	ErrorCode ErrorCode
 }
-
 
 type ReadChunkArg struct {
 	Handle ChunkHandle

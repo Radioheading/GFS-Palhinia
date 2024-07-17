@@ -2,6 +2,7 @@ package client
 
 import (
 	"gfs"
+	"gfs/util"
 	"sync"
 	"time"
 )
@@ -9,14 +10,14 @@ import (
 type LeaseBuffer struct {
 	sync.RWMutex
 	master gfs.ServerAddress
-	buffer map[gfs.ChunkHandle]gfs.Lease
-	tick  time.Duration
+	buffer map[gfs.ChunkHandle]*gfs.Lease
+	tick   time.Duration
 }
 
 func newLeaseBuffer(master gfs.ServerAddress, tick time.Duration) *LeaseBuffer {
 	buf := &LeaseBuffer{
 		master: master,
-		buffer: make(map[gfs.ChunkHandle]gfs.Lease),
+		buffer: make(map[gfs.ChunkHandle]*gfs.Lease),
 		tick:   tick,
 	}
 
@@ -38,7 +39,7 @@ func newLeaseBuffer(master gfs.ServerAddress, tick time.Duration) *LeaseBuffer {
 	return buf
 }
 
-func (buf *LeaseBuffer) GetLease(handle gfs.ChunkHandle) (gfs.Lease, error) {
+func (buf *LeaseBuffer) GetLease(handle gfs.ChunkHandle) (*gfs.Lease, error) {
 	buf.Lock()
 	defer buf.Unlock()
 	lease, ok := buf.buffer[handle]
@@ -47,5 +48,13 @@ func (buf *LeaseBuffer) GetLease(handle gfs.ChunkHandle) (gfs.Lease, error) {
 	}
 
 	// if lease not found in buffer, we need to fetch it from master
-	var 
+	var getPrimaryAndSecondariesReply gfs.GetPrimaryAndSecondariesReply
+	var err error
+	if err = util.Call(buf.master, "Master.GetPrimaryAndSecondaries", gfs.GetPrimaryAndSecondariesArg{Handle: handle}, &getPrimaryAndSecondariesReply); err != nil {
+		return nil, err
+	}
+
+	lease = &gfs.Lease{Primary: getPrimaryAndSecondariesReply.Primary, Expire: getPrimaryAndSecondariesReply.Expire, Secondaries: getPrimaryAndSecondariesReply.Secondaries}
+	buf.buffer[handle] = lease
+	return lease, nil
 }

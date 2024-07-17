@@ -29,13 +29,13 @@ type PathInfo struct {
 	Chunks int64
 }
 
-
 type MutationType int
 
 const (
 	MutationWrite = iota
 	MutationAppend
 	MutationPad
+	MutationCopy
 )
 
 type ErrorCode int
@@ -72,7 +72,7 @@ const (
 	HeartbeatInterval  = 100 * time.Millisecond
 	BackgroundInterval = 200 * time.Millisecond //
 	RetryInterval      = 50 * time.Millisecond
-	ServerTimeout      = 1 * time.Second        //
+	ServerTimeout      = 1 * time.Second //
 
 	MaxChunkSize  = 512 << 10 // 512KB DEBUG ONLY 64 << 20
 	MaxAppendSize = MaxChunkSize / 4
@@ -83,7 +83,6 @@ const (
 	DownloadBufferExpire = 2 * time.Minute
 	DownloadBufferTick   = 10 * time.Second
 
-	
 	LeaseBufferTick = 500 * time.Second
 )
 
@@ -100,5 +99,5 @@ func (path *Path) GetPaths() []string {
 	}
 
 	seg := strings.Split(str, "/")
-	return seg[1: len(seg) - 1]
+	return seg[1 : len(seg)-1]
 }

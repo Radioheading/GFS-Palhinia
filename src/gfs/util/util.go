@@ -54,3 +54,10 @@ func Sample(n, k int) ([]int, error) {
 	}
 	return rand.Perm(n)[:k], nil
 }
+
+func Max(a, b gfs.Offset) gfs.Offset {
+	if a > b {
+		return a
+	}
+	return b
+}
