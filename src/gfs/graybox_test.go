@@ -49,6 +49,61 @@ func errorAll(ch chan error, n int, t *testing.T) {
 /*
  *  TEST SUITE 1 - Basic File Operation
  */
+// func TestSnapShot(t *testing.T) {
+// 	p := gfs.Path("/snapshot.txt")
+// 	msg := []byte("Don't Lose Me.")
+// 	msg2 := []byte("Don't Read Me.")
+
+// 	ch := make(chan error, N+10)
+// 	ch <- c.Create(p)
+
+// 	// append chunk 1st
+// 	_, err := c.Append(p, msg)
+// 	ch <- err
+
+// 	// write chunk 2nd
+// 	var r gfs.GetChunkHandleReply
+// 	err = m.RPCGetChunkHandle(gfs.GetChunkHandleArg{p, 1}, &r)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
+// 	for i := 0; i < N; i++ {
+// 		go func(x int) {
+// 			ch <- c.WriteChunk(r.Handle, gfs.Offset(x*2), []byte(fmt.Sprintf("%2d", x)))
+// 		}(i)
+// 	}
+
+// 	time.Sleep(500 * time.Millisecond)
+
+// 	c1 := client.NewClient(mAdd)
+// 	go func() {
+// 		err := c1.Snapshot(p)
+// 		ch <- err
+// 	}()
+// 	go func() {
+// 		time.Sleep(500 * time.Millisecond)
+// 		err := c.Write(p, gfs.Offset(0), msg)
+// 		if e, ok := err.(gfs.Error); ok && e.Code == gfs.LeaseExpired {
+// 			ch <- nil
+// 		} else {
+// 			ch <- fmt.Errorf("lease expire not work")
+// 		}
+// 		err = c.Write(p, gfs.Offset(0), msg2)
+// 		ch <- err
+// 	}()
+
+// 	errorAll(ch, N+5, t)
+
+// 	buf := make([]byte, len(msg2))
+// 	_, err = c1.ReadChunk(3, gfs.Offset(0), buf)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
+// 	if !reflect.DeepEqual(msg, buf) {
+// 		t.Error("expected (", msg, ") != buf (", buf, ")")
+// 	}
+// }
+
 func TestCreateFile(t *testing.T) {
 	err := m.RPCCreateFile(gfs.CreateFileArg{"/test1.txt"}, &gfs.CreateFileReply{})
 	if err != nil {
@@ -67,10 +122,10 @@ func TestMkdirDeleteList(t *testing.T) {
 	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/file1.txt"}, &gfs.CreateFileReply{})
 	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/file2.txt"}, &gfs.CreateFileReply{})
 	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/dir1/file3.txt"}, &gfs.CreateFileReply{})
-	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/dir1/file4.txt"}, &gfs.CreateFileReply{})
-	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/dir2/file5.txt"}, &gfs.CreateFileReply{})
+	ch <- m.RPCCreateFile(gfs.CreateFileArg{Path: "/dir1/file4.txt"}, &gfs.CreateFileReply{})
+	ch <- m.RPCCreateFile(gfs.CreateFileArg{Path: "/dir2/file5.txt"}, &gfs.CreateFileReply{})
 
-	err := m.RPCCreateFile(gfs.CreateFileArg{"/dir2/file5.txt"}, &gfs.CreateFileReply{})
+	err := m.RPCCreateFile(gfs.CreateFileArg{Path: "/dir2/file5.txt"}, &gfs.CreateFileReply{})
 	if err == nil {
 		t.Error("the same file has been created twice")
 	}
@@ -109,8 +164,13 @@ func TestMkdirDeleteList(t *testing.T) {
 }
 
 func TestRPCGetChunkHandle(t *testing.T) {
+	// var r gfs.CreateFileReply
 	var r1, r2 gfs.GetChunkHandleReply
 	path := gfs.Path("/test1.txt")
+	// err := m.RPCCreateFile(gfs.CreateFileArg{Path: path}, &r)
+	// if err != nil {
+	// 	t.Error(err)
+	// }
 	err := m.RPCGetChunkHandle(gfs.GetChunkHandleArg{path, 0}, &r1)
 	if err != nil {
 		t.Error(err)
@@ -120,7 +180,7 @@ func TestRPCGetChunkHandle(t *testing.T) {
 		t.Error(err)
 	}
 	if r1.Handle != r2.Handle {
-		t.Error("got different handle: %v and %v", r1.Handle, r2.Handle)
+		t.Errorf("got different handle: %v and %v", r1.Handle, r2.Handle)
 	}
 
 	err = m.RPCGetChunkHandle(gfs.GetChunkHandleArg{path, 2}, &r2)
@@ -135,17 +195,23 @@ func TestWriteChunk(t *testing.T) {
 	ch := make(chan error, N+2)
 	ch <- m.RPCCreateFile(gfs.CreateFileArg{p}, &gfs.CreateFileReply{})
 	ch <- m.RPCGetChunkHandle(gfs.GetChunkHandleArg{p, 0}, &r1)
+
 	for i := 0; i < N; i++ {
 		go func(x int) {
 			ch <- c.WriteChunk(r1.Handle, gfs.Offset(x*2), []byte(fmt.Sprintf("%2d", x)))
 		}(i)
 	}
+
 	errorAll(ch, N+2, t)
 }
 
 func TestReadChunk(t *testing.T) {
 	var r1 gfs.GetChunkHandleReply
 	p := gfs.Path("/TestWriteChunk.txt")
+	// err := m.RPCCreateFile(gfs.CreateFileArg{p}, &gfs.CreateFileReply{})
+	// if err != nil {
+	// 	t.Error(err)
+	// }
 	ch := make(chan error, N+1)
 	ch <- m.RPCGetChunkHandle(gfs.GetChunkHandleArg{p, 0}, &r1)
 	for i := 0; i < N; i++ {
@@ -316,6 +382,7 @@ func TestWriteReadBigData(t *testing.T) {
 	ch <- err
 
 	if n != size {
+		t.Error("size: ", size, " read: ", n)
 		t.Error("read counter is wrong")
 	}
 	if !reflect.DeepEqual(expected, buf) {
@@ -570,6 +637,7 @@ func TestShutdownInAppend(t *testing.T) {
 		if key == -1 {
 			t.Error("incorrect data", buf)
 		} else {
+			// log.Info("read key: ", key)
 			delete(todelete, key)
 		}
 	}
@@ -750,8 +818,8 @@ func TestDiskError(t *testing.T) {
 
 	fmt.Println("###### Destory two chunkserver's diskes")
 	// destory two server's disk
-	log.Info(l.Locations[:2])
-	for i, _ := range cs {
+	log.Info("Kill server: ", l.Locations[:2])
+	for i := range cs {
 		if csAdd[i] == l.Locations[0] || csAdd[i] == l.Locations[1] {
 			ii := strconv.Itoa(i)
 			os.RemoveAll(path.Join(root, "cs"+ii))

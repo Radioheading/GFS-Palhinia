@@ -420,11 +420,11 @@ func (cs *ChunkServer) RPCApplyCopy(args gfs.ApplyCopyArg, reply *gfs.ApplyCopyR
 	defer cs.chunkProtector.Unlock()
 
 	if _, ok := cs.chunk[args.Handle]; !ok {
-		return fmt.Errorf("Chunk %v not found", args.Handle)
+		return fmt.Errorf("chunk %v not found", args.Handle)
 	}
 
 	if args.Version <= cs.chunk[args.Handle].version {
-		return fmt.Errorf("Version %v is outdated", args.Version)
+		return fmt.Errorf("version %v is outdated", args.Version)
 	}
 
 	err := cs.ApplyMutationOnChunk(args.Handle, &Mutation{mtype: gfs.MutationCopy, version: args.Version, data: args.Data, offset: 0})
@@ -439,6 +439,34 @@ func (cs *ChunkServer) RPCApplyCopy(args gfs.ApplyCopyArg, reply *gfs.ApplyCopyR
 	chunk.version = args.Version
 	chunk.newestVersion = args.Version
 	chunk.length = gfs.Offset(len(args.Data))
+
+	return nil
+}
+
+// AdjustVersion is called by master to check whether the chunkserver
+// holds the latest version of the chunk.
+func (cs *ChunkServer) AdjustVersion(args gfs.AdjustChunkVersionArg, reply *gfs.AdjustChunkVersionReply) error {
+	cs.chunkProtector.RLock()
+	defer cs.chunkProtector.RUnlock()
+
+	var chunk *chunkInfo
+	var ok bool
+
+	if chunk, ok = cs.chunk[args.Handle]; !ok {
+		return fmt.Errorf("chunk %v not found", args.Handle)
+	}
+
+	chunk.Lock()
+	defer chunk.Unlock()
+
+	chunk.version++
+
+	if chunk.version < args.Version {
+		log.Warningf("Chunk %v version is outdated, current version %v, master version %v", args.Handle, chunk.version, args.Version)
+		reply.Stale = true
+	} else {
+		reply.Stale = false
+	}
 
 	return nil
 }
