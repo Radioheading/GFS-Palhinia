@@ -1,8 +1,11 @@
 package master
 
 import (
+	"fmt"
+	"gfs/util"
 	"net"
 	"net/rpc"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -102,23 +105,16 @@ func (m *Master) BackgroundActivity() error {
 // Lease extension request is included.
 func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) error {
 	m.csm.Heartbeat(args.Address)
-	return nil;
+	return nil
 	// todo: lease extension
 }
 
 // RPCGetPrimaryAndSecondaries returns lease holder and secondaries of a chunk.
 // If no one holds the lease currently, grant one.
 func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesArg, reply *gfs.GetPrimaryAndSecondariesReply) error {
-	stales, lease, err := m.cm.GetLeaseHolder(args.Handle)
+	lease, err := m.cm.GetLeaseHolder(args.Handle)
 	if err != nil {
 		return err
-	}
-	m.csm.RemoveChunk(stales, args.Handle)
-	for _, staleServer := range stales {
-		err := m.csm.AddGarbage(staleServer, args.Handle)
-		if err != nil {
-			return err
-		}
 	}
 
 	reply.Primary = lease.primary
@@ -131,32 +127,116 @@ func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesAr
 func (m *Master) RPCGetReplicas(args gfs.GetReplicasArg, reply *gfs.GetReplicasReply) error {
 	// todo: further check
 	log.Infof("RPCGetReplicas %v", args.Handle)
-	_, err := m.cm.GetReplicas(args.Handle)
+	locations, err := m.cm.GetReplicas(args.Handle)
+
+	if err != nil {
+		return err
+	}
+
+	for _, location := range locations.GetAll() {
+		if addr, ok := location.(gfs.ServerAddress); ok {
+			reply.Locations = append(reply.Locations, addr)
+		} else {
+			return fmt.Errorf("invalid location %v", location)
+		}
+	}
+
 	return err
 }
 
 // RPCCreateFile is called by client to create a new file
 func (m *Master) RPCCreateFile(args gfs.CreateFileArg, replay *gfs.CreateFileReply) error {
-	err := m.nm.Create(args.Path)
-	return err
+	return m.nm.Create(args.Path)
 }
 
 // RPCMkdir is called by client to make a new directory
 func (m *Master) RPCMkdir(args gfs.MkdirArg, replay *gfs.MkdirReply) error {
-	err := m.nm.Mkdir(args.Path)
-	return err
+	return m.nm.Mkdir(args.Path)
 }
 
 // RPCGetFileInfo is called by client to get file information
 // todo: GetFileInfo
 func (m *Master) RPCGetFileInfo(args gfs.GetFileInfoArg, reply *gfs.GetFileInfoReply) error {
-	err := m.nm.GetFileInfo(args.Path, reply)
-	return err
+	return m.nm.GetFileInfo(args.Path, reply)
 }
 
 // RPCGetChunkHandle returns the chunk handle of (path, index).
 // If the requested index is bigger than the number of chunks of this path by exactly one, create one.
 func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChunkHandleReply) error {
-	// todo
+	raw_path, filename := args.Path.ParseLeafname()
+	paths := raw_path.GetPaths()
+	new_node, err := m.nm.lockParents(paths, true)
+
+	if err != nil {
+		m.nm.unlockParents(paths, true)
+	}
+
+	defer m.nm.unlockParents(paths, true)
+
+	chunk_file, ok := new_node.children[filename]
+	if !ok {
+		return fmt.Errorf("file %v does not exist", filename)
+	}
+
+	if args.Index < 0 || args.Index > gfs.ChunkIndex(chunk_file.chunks) {
+		return fmt.Errorf("index %d out of bound", args.Index)
+	}
+
+	if args.Index == gfs.ChunkIndex(chunk_file.chunks) {
+		chunk_file.chunks++
+		chunk_file.length += gfs.MaxChunkSize
+
+		servers, err := m.csm.ChooseServers(gfs.DefaultNumReplicas)
+
+		reply.Handle, err = m.cm.CreateChunk(args.Path, servers)
+
+		if err != nil {
+			return err
+		}
+
+		var waitGroup sync.WaitGroup
+		waitGroup.Add(len(servers))
+		var wg_lock sync.RWMutex
+		var errList []error
+
+		for _, server := range servers {
+			go func(addr gfs.ServerAddress) {
+				err := util.Call(server, "ChunkServer.RPCCreateChunk", gfs.CreateChunkArg{Handle: reply.Handle}, &gfs.CreateChunkReply{})
+				if err != nil {
+					wg_lock.Lock()
+					errList = append(errList, err)
+					wg_lock.Unlock()
+				}
+
+				sv := make([]gfs.ServerAddress, 0)
+				sv = append(sv, server)
+
+				m.csm.AddChunk(sv, reply.Handle)
+			}(server)
+		}
+
+		waitGroup.Wait()
+
+		if len(errList) > 0 {
+			return fmt.Errorf("error creating chunk: %v", errList)
+		} else {
+			return nil
+		}
+	} else {
+		reply.Handle, err = m.cm.GetChunk(args.Path, args.Index)
+		return err
+	}
+}
+
+// RPCList is called by client to list all files and directories under a path
+func (m *Master) RPCList(args gfs.ListArg, reply *gfs.ListReply) error {
+	ret, err := m.nm.List(args.Path)
+
+	if err != nil {
+		return err
+	}
+
+	reply.Files = ret
+
 	return nil
 }

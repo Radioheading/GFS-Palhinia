@@ -135,6 +135,7 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
 
 		var serverAddr []string
 		var waitGroup sync.WaitGroup
+		waitGroup.Add(len(chunk.location.GetAll()))
 		var addrLock sync.Mutex
 
 		for _, inter_addr := range chunk.location.GetAll() {
