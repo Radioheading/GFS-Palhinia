@@ -2,10 +2,8 @@ package master
 
 import (
 	"fmt"
-	"gfs/util"
 	"net"
 	"net/rpc"
-	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -165,18 +163,26 @@ func (m *Master) RPCGetFileInfo(args gfs.GetFileInfoArg, reply *gfs.GetFileInfoR
 func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChunkHandleReply) error {
 	raw_path, filename := args.Path.ParseLeafname()
 	paths := raw_path.GetPaths()
+
+	log.Info("RPCGetChunkHandle: ", args.Path, " ", args.Index, ", filename: ", filename)
+
 	new_node, err := m.nm.lockParents(paths, true)
 
 	if err != nil {
 		m.nm.unlockParents(paths, true)
+		return err
 	}
 
 	defer m.nm.unlockParents(paths, true)
 
 	chunk_file, ok := new_node.children[filename]
+
 	if !ok {
 		return fmt.Errorf("file %v does not exist", filename)
 	}
+
+	chunk_file.Lock() // remember to lock the file itself
+	defer chunk_file.Unlock()
 
 	if args.Index < 0 || args.Index > gfs.ChunkIndex(chunk_file.chunks) {
 		return fmt.Errorf("index %d out of bound", args.Index)
@@ -188,40 +194,43 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 
 		servers, err := m.csm.ChooseServers(gfs.DefaultNumReplicas)
 
-		reply.Handle, err = m.cm.CreateChunk(args.Path, servers)
+		if err != nil {
+			return err
+		}
+
+		var valid_addr []gfs.ServerAddress
+
+		reply.Handle, valid_addr, err = m.cm.CreateChunk(args.Path, servers)
 
 		if err != nil {
 			return err
 		}
 
-		var waitGroup sync.WaitGroup
-		waitGroup.Add(len(servers))
-		var wg_lock sync.RWMutex
-		var errList []error
+		// var waitGroup sync.WaitGroup
+		// waitGroup.Add(len(servers))
+		// var wg_lock sync.RWMutex
+		// var errList []error
 
-		for _, server := range servers {
-			go func(addr gfs.ServerAddress) {
-				err := util.Call(server, "ChunkServer.RPCCreateChunk", gfs.CreateChunkArg{Handle: reply.Handle}, &gfs.CreateChunkReply{})
-				if err != nil {
-					wg_lock.Lock()
-					errList = append(errList, err)
-					wg_lock.Unlock()
-				}
+		// for _, server := range servers {
+		// 	go func(addr gfs.ServerAddress) {
+		// 		err := util.Call(server, "ChunkServer.RPCCreateChunk", gfs.CreateChunkArg{Handle: reply.Handle}, &gfs.CreateChunkReply{})
+		// 		if err != nil {
+		// 			wg_lock.Lock()
+		// 			errList = append(errList, err)
+		// 			wg_lock.Unlock()
+		// 		}
 
-				sv := make([]gfs.ServerAddress, 0)
-				sv = append(sv, server)
+		// 		sv := make([]gfs.ServerAddress, 0)
+		// 		sv = append(sv, server)
 
-				m.csm.AddChunk(sv, reply.Handle)
-			}(server)
-		}
+		// 		m.csm.AddChunk(sv, reply.Handle)
+		// 	}(server)
+		// }
 
-		waitGroup.Wait()
+		// waitGroup.Wait()
 
-		if len(errList) > 0 {
-			return fmt.Errorf("error creating chunk: %v", errList)
-		} else {
-			return nil
-		}
+		m.csm.AddChunk(valid_addr, reply.Handle)
+		return nil
 	} else {
 		reply.Handle, err = m.cm.GetChunk(args.Path, args.Index)
 		return err

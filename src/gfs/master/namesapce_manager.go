@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"gfs"
 	"sync"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type namespaceManager struct {
@@ -23,13 +25,13 @@ type nsTree struct {
 }
 
 type persistNsTree struct {
-	Id 			int
-	Fid 		int 
+	Id  int
+	Fid int
 
-	Name 		string 
-	IsDir		bool
-	Length	int64
-	Chunks 	int64 
+	Name   string
+	IsDir  bool
+	Length int64
+	Chunks int64
 }
 
 func newNamespaceManager() *namespaceManager {
@@ -44,13 +46,13 @@ func newNamespaceManager() *namespaceManager {
 // func dfs for persistence of namespace tree, as is show in the struct persistNsTree,
 // we need to store its node id: DFS order, father id, name, isdir, length, chunks.
 func dfs(u *nsTree, name string, fid int, cur_id *int, array *[]persistNsTree) {
-	*cur_id++;
+	*cur_id++
 
 	*array = append(*array, persistNsTree{
-		Id: *cur_id,
-		Fid: fid,
-		Name: name,
-		IsDir: u.isDir,
+		Id:     *cur_id,
+		Fid:    fid,
+		Name:   name,
+		IsDir:  u.isDir,
 		Length: u.length,
 		Chunks: u.chunks,
 	})
@@ -95,24 +97,26 @@ func (nm *namespaceManager) antiPersist(array []persistNsTree) {
 }
 
 // acquire read lock along the parents (e.g. /d1/d2/.../dn/leaf):
-// 
+//
 // acquire read-locks on the directory names /d1, /d1/d2, ..., /d1/d2/.../dn
-// 
+//
 // If RLockLeaf = True, then acquire read-locks on /d1/d2/.../dn/leaf
 // thus, need true for read-only circumstances
 func (nm *namespaceManager) lockParents(paths []string, RLockLeaf bool) (*nsTree, error) {
+	log.Info("lockParents: ", paths)
 	cur := nm.root
-	for i := 0; i < len(paths) - 1; i++ {
+	for i := 0; i < len(paths)-1; i++ {
 		if cur.children[paths[i]] == nil {
 			return nil, fmt.Errorf("path %v does not exist", paths[i])
 		} else {
+			log.Info("lockParents: ", paths[i])
 			cur.RLock()
 			cur = cur.children[paths[i]]
 		}
 	}
 
 	if !cur.isDir {
-		return nil, fmt.Errorf("path %v is not a directory", paths[len(paths) - 1])
+		return nil, fmt.Errorf("path %v is not a directory", paths[len(paths)-1])
 	}
 
 	if RLockLeaf {
@@ -125,7 +129,7 @@ func (nm *namespaceManager) lockParents(paths []string, RLockLeaf bool) (*nsTree
 // func unloockParents for releasing read lock along the parents
 func (nm *namespaceManager) unlockParents(paths []string, RLockLeaf bool) {
 	cur := nm.root
-	for i := 0; i < len(paths) - 1; i++ {
+	for i := 0; i < len(paths)-1; i++ {
 		cur.RUnlock()
 		cur = cur.children[paths[i]]
 	}
@@ -149,6 +153,9 @@ func (nm *namespaceManager) Create(p gfs.Path) error {
 	if new_node.children[filename] != nil {
 		return fmt.Errorf("file %v already exists", filename)
 	}
+
+	log.Info("create file: ", filename)
+	log.Info("file path: ", raw_path)
 
 	new_node.children[filename] = &nsTree{isDir: false, length: 0, chunks: 0, children: make(map[string]*nsTree)}
 

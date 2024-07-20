@@ -274,10 +274,6 @@ func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChu
 		return fmt.Errorf("DataID %v not found", args.DataID)
 	}
 
-	if args.Offset+gfs.Offset(len(op_data)) > gfs.Offset(len(op_data)) {
-		return fmt.Errorf("Offset %v out of bound", args.Offset)
-	}
-
 	err := cs.WriteChunk(args.DataID.Handle, args.Offset, op_data)
 
 	if err != nil {
@@ -445,7 +441,8 @@ func (cs *ChunkServer) RPCApplyCopy(args gfs.ApplyCopyArg, reply *gfs.ApplyCopyR
 
 // AdjustVersion is called by master to check whether the chunkserver
 // holds the latest version of the chunk.
-func (cs *ChunkServer) AdjustVersion(args gfs.AdjustChunkVersionArg, reply *gfs.AdjustChunkVersionReply) error {
+func (cs *ChunkServer) RPCAdjustVersion(args gfs.AdjustChunkVersionArg, reply *gfs.AdjustChunkVersionReply) error {
+	log.Info("Adjusting version for ", args.Handle)
 	cs.chunkProtector.RLock()
 	defer cs.chunkProtector.RUnlock()
 

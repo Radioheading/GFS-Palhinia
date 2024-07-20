@@ -285,6 +285,8 @@ func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []by
 		return fmt.Errorf("WriteChunk: write exceeds chunk size")
 	}
 
+	log.Info("write chunk; handle: ", handle, " offset: ", offset, " data: ", data)
+
 	leaseBuf, err := c.buffer.GetLease(handle)
 
 	if err != nil {

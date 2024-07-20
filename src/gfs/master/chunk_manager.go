@@ -6,6 +6,8 @@ import (
 	"gfs/util"
 	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // chunkManager manges chunks
@@ -101,6 +103,8 @@ func (cm *chunkManager) GetChunk(path gfs.Path, index gfs.ChunkIndex) (gfs.Chunk
 // (i.e. primary) and expire time of the lease. If no one has a lease,
 // grants one to a replica it chooses.
 func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
+	log.Info("get lease holder for chunk ", handle)
+
 	cm.RLock()
 
 	var chunk *chunkInfo
@@ -130,10 +134,11 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
 		}
 
 	} else { // grant a new lease
+		log.Info("obsolete lease for chunk ", handle, " version ", chunk.version, "; grant a new lease")
 		var ret lease
 		chunk.version++
 
-		var serverAddr []string
+		var serverAddr []gfs.ServerAddress
 		var waitGroup sync.WaitGroup
 		waitGroup.Add(len(chunk.location.GetAll()))
 		var addrLock sync.Mutex
@@ -147,13 +152,14 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
 			}
 
 			go func(a gfs.ServerAddress) {
+				log.Info("adjust chunk version for ", handle, " at ", a)
 				var r gfs.AdjustChunkVersionReply
 
-				err := util.Call(a, "ChunkServer.RPCAdjustChunkVersion", gfs.AdjustChunkVersionArg{Handle: handle, Version: chunk.version}, &r)
+				err := util.Call(a, "ChunkServer.RPCAdjustVersion", gfs.AdjustChunkVersionArg{Handle: handle, Version: chunk.version}, &r)
 
 				if err == nil && !r.Stale {
 					addrLock.Lock()
-					serverAddr = append(serverAddr, string(a))
+					serverAddr = append(serverAddr, a)
 					addrLock.Unlock()
 				}
 
@@ -222,7 +228,7 @@ func (cm *chunkManager) ExtendLease(handle gfs.ChunkHandle, primary gfs.ServerAd
 
 // CreateChunk creates a new chunk for path.
 // here, if some of the addresses are not available, we would append it to the waitlist.
-func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (gfs.ChunkHandle, error) {
+func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (gfs.ChunkHandle, []gfs.ServerAddress, error) {
 	cm.Lock()
 	defer cm.Unlock()
 
@@ -230,6 +236,7 @@ func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (g
 
 	if !ok {
 		file_info = new(fileInfo)
+		file_info.handles = make([]gfs.ChunkHandle, 0)
 		cm.file[path] = file_info
 	}
 
@@ -241,6 +248,7 @@ func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (g
 	cm.chunk[handle] = &chunkInfo{path: path}
 
 	errlist := make([]error, 0)
+	validAddrs := make([]gfs.ServerAddress, 0)
 
 	for _, addr := range addrs {
 		err := util.Call(addr, "ChunkServer.RPCCreateChunk", gfs.CreateChunkArg{Handle: handle}, &gfs.CreateChunkReply{})
@@ -248,6 +256,7 @@ func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (g
 			errlist = append(errlist, err)
 		} else {
 			cm.chunk[handle].location.Add(addr)
+			validAddrs = append(validAddrs, addr)
 		}
 	}
 
@@ -255,5 +264,5 @@ func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (g
 		cm.replicasWaitlist = append(cm.replicasWaitlist, handle)
 	}
 
-	return handle, nil
+	return handle, validAddrs, nil
 }

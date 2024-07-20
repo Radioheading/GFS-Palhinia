@@ -172,6 +172,7 @@ func TestRPCGetChunkHandle(t *testing.T) {
 	// 	t.Error(err)
 	// }
 	err := m.RPCGetChunkHandle(gfs.GetChunkHandleArg{path, 0}, &r1)
+	log.Info("get chunk handle: ", r1)
 	if err != nil {
 		t.Error(err)
 	}

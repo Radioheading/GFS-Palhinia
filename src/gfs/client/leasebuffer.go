@@ -5,6 +5,8 @@ import (
 	"gfs/util"
 	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type LeaseBuffer struct {
@@ -50,9 +52,14 @@ func (buf *LeaseBuffer) GetLease(handle gfs.ChunkHandle) (*gfs.Lease, error) {
 	// if lease not found in buffer, we need to fetch it from master
 	var getPrimaryAndSecondariesReply gfs.GetPrimaryAndSecondariesReply
 	var err error
-	if err = util.Call(buf.master, "Master.GetPrimaryAndSecondaries", gfs.GetPrimaryAndSecondariesArg{Handle: handle}, &getPrimaryAndSecondariesReply); err != nil {
+
+	log.Info("get lease buffer failed, try RPCGetPrimaryAndSecondaries: ", handle)
+
+	if err = util.Call(buf.master, "Master.RPCGetPrimaryAndSecondaries", gfs.GetPrimaryAndSecondariesArg{Handle: handle}, &getPrimaryAndSecondariesReply); err != nil {
 		return nil, err
 	}
+
+	log.Info("RPCGetPrimaryAndSecondaries: ", handle, " ", getPrimaryAndSecondariesReply.Primary, " ", getPrimaryAndSecondariesReply.Expire, " ", getPrimaryAndSecondariesReply.Secondaries)
 
 	lease = &gfs.Lease{Primary: getPrimaryAndSecondariesReply.Primary, Expire: getPrimaryAndSecondariesReply.Expire, Secondaries: getPrimaryAndSecondariesReply.Secondaries}
 	buf.buffer[handle] = lease
