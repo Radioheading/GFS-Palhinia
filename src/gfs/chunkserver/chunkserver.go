@@ -123,14 +123,20 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 // ApplyMutationOnChunk applies mutation to the chunk
 func (cs *ChunkServer) ApplyMutationOnChunk(handle gfs.ChunkHandle, m *Mutation) error {
 	my_path := path.Join(cs.serverRoot, fmt.Sprintf("%v", handle))
-	f, err := os.OpenFile(my_path, os.O_WRONLY|os.O_CREATE, 0644)
+	f, err := os.OpenFile(my_path, os.O_WRONLY|os.O_CREATE, 0777)
+
+	log.Info(cs.address, ": plan to apply mutation~, path: ", my_path)
+	log.Info("write data: ", m.data)
 
 	if err != nil {
 		return err
 	}
 
 	defer f.Close()
-	_, err = f.WriteAt(m.data, int64(m.offset))
+	n, err := f.WriteAt(m.data, int64(m.offset))
+
+	log.Info("byte written: ", n)
+
 	if err != nil {
 		return err
 	}
@@ -167,6 +173,8 @@ func (cs *ChunkServer) RPCPushDataAndForward(args gfs.PushDataAndForwardArg, rep
 // RPCForwardData is called by another replica who sends data to the current memory buffer.
 // TODO: This should be replaced by a chain forwarding.
 func (cs *ChunkServer) RPCForwardData(args gfs.ForwardDataArg, reply *gfs.ForwardDataReply) error {
+	log.Info("forwarding data on server: ", cs.address)
+
 	if _, ok := cs.dl.Get(args.DataID); ok {
 		return fmt.Errorf("DataID %v already found", args.DataID)
 	}
@@ -189,7 +197,7 @@ func (cs *ChunkServer) RPCCreateChunk(args gfs.CreateChunkArg, reply *gfs.Create
 	cs.chunkProtector.Lock()
 	defer cs.chunkProtector.Unlock()
 	if _, ok := cs.chunk[args.Handle]; ok {
-		return fmt.Errorf("Chunk %v already exists", args.Handle)
+		return fmt.Errorf("chunk %v already exists", args.Handle)
 	}
 
 	cs.chunk[args.Handle] = &chunkInfo{length: 0, version: 0, newestVersion: 0, mutations: make(map[gfs.ChunkVersion]*Mutation)}
@@ -202,7 +210,7 @@ func (cs *ChunkServer) ReadChunk(handle gfs.ChunkHandle, offset gfs.Offset, leng
 	cs.chunkProtector.RLock()
 	if _, ok := cs.chunk[handle]; !ok {
 		cs.chunkProtector.RUnlock()
-		return nil, fmt.Errorf("Chunk %v not found", handle)
+		return nil, fmt.Errorf("chunk %v not found", handle)
 	}
 
 	cs.chunkProtector.RUnlock()
@@ -286,6 +294,8 @@ func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChu
 		return err
 	}
 
+	log.Info("done writing on server: ", cs.address)
+
 	cs.pendingLeaseExtensions.Add(args.DataID.Handle)
 	return nil
 }
@@ -368,11 +378,7 @@ func (cs *ChunkServer) RPCApplyMutation(args gfs.ApplyMutationArg, reply *gfs.Ap
 	defer cs.chunkProtector.Unlock()
 
 	if _, ok := cs.chunk[args.DataID.Handle]; !ok {
-		return fmt.Errorf("Chunk %v not found", args.Version)
-	}
-
-	if args.Offset+gfs.Offset(len(opdata)) > gfs.Offset(len(opdata)) {
-		return fmt.Errorf("Offset %v out of bound", args.Offset)
+		return fmt.Errorf("chunk %v not found", args.Version)
 	}
 
 	err := cs.ApplyMutationOnChunk(args.DataID.Handle, &Mutation{mtype: args.Mtype, version: args.Version, data: opdata, offset: args.Offset})
@@ -382,6 +388,7 @@ func (cs *ChunkServer) RPCApplyMutation(args gfs.ApplyMutationArg, reply *gfs.Ap
 	}
 
 	cs.chunk[args.DataID.Handle].newestVersion = args.Version
+	cs.chunk[args.DataID.Handle].version = args.Version
 	cs.chunk[args.DataID.Handle].length = util.Max(cs.chunk[args.DataID.Handle].length, args.Offset+gfs.Offset(len(opdata)))
 	return nil
 }

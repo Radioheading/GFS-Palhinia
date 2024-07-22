@@ -307,6 +307,8 @@ func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []by
 	r := &gfs.WriteChunkReply{}
 	args := gfs.WriteChunkArg{DataID: pushDataReply.DataID, Offset: offset, Secondaries: leaseBuf.Secondaries}
 
+	log.Info("going to write to primary: ", leaseBuf.Primary)
+
 	err = util.Call(leaseBuf.Primary, "ChunkServer.RPCWriteChunk", args, r)
 
 	if err != nil {
@@ -320,6 +322,8 @@ func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []by
 	if r.ErrorCode == gfs.LeaseHasExpired {
 		return gfs.Error{Code: r.ErrorCode, Err: "Lease Expiration in WriteChunk"}
 	}
+
+	log.Info("done writing!!!")
 
 	return nil
 }

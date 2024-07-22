@@ -1,6 +1,6 @@
 package master
 
-///  
+///
 
 import (
 	// "fm发“
@@ -54,10 +54,16 @@ func (csm *chunkServerManager) AddChunk(addrs []gfs.ServerAddress, handle gfs.Ch
 	defer csm.Unlock()
 	for _, addr := range addrs {
 		if server, ok := csm.servers[addr]; ok {
-			if checker, ok := server.chunks[handle]; !ok || !checker {
+			log.Info("Add chunk for addr: ", addr)
+
+			var checker bool
+
+			if checker, ok = server.chunks[handle]; !ok || !checker {
 				server.chunks[handle] = true
 			}
-			log.Warning("Chunk ", handle, " already exists on ", addr)
+			if ok && checker {
+				log.Warning("Chunk ", handle, " already exists on ", addr)
+			}
 		}
 	}
 	return nil

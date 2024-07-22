@@ -133,6 +133,8 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
 			}
 		}
 
+		return &ret, nil
+
 	} else { // grant a new lease
 		log.Info("obsolete lease for chunk ", handle, " version ", chunk.version, "; grant a new lease")
 		var ret lease
@@ -199,8 +201,6 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
 
 		return &ret, nil
 	}
-
-	return nil, nil
 }
 
 // ExtendLease extends the lease of chunk if the lease holder is primary.
