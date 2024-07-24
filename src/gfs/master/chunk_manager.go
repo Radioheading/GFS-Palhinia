@@ -115,6 +115,8 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
 		return nil, fmt.Errorf("chunk %d not found", handle)
 	}
 
+	cm.RUnlock()
+
 	chunk.Lock()
 	defer chunk.Unlock()
 
@@ -229,8 +231,11 @@ func (cm *chunkManager) ExtendLease(handle gfs.ChunkHandle, primary gfs.ServerAd
 // CreateChunk creates a new chunk for path.
 // here, if some of the addresses are not available, we would append it to the waitlist.
 func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (gfs.ChunkHandle, []gfs.ServerAddress, error) {
+	log.Info("enter create chunk for ", path)
 	cm.Lock()
 	defer cm.Unlock()
+
+	log.Info("create chunk for ", path)
 
 	file_info, ok := cm.file[path]
 

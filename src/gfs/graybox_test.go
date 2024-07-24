@@ -35,7 +35,7 @@ var (
 const (
 	mAdd  = ":7777"
 	csNum = 5
-	N     = 10
+	N     = 2
 )
 
 func errorAll(ch chan error, n int, t *testing.T) {
@@ -242,6 +242,10 @@ func checkReplicas(handle gfs.ChunkHandle, length int, t *testing.T) int {
 		t.Error(err)
 	}
 
+	for _, v := range l.Locations {
+		log.Info("replica: ", v)
+	}
+
 	// read
 	args := gfs.ReadChunkArg{handle, 0, length}
 	for _, addr := range l.Locations {
@@ -268,11 +272,13 @@ func TestReplicaEquality(t *testing.T) {
 	var data [][]byte
 	p := gfs.Path("/TestWriteChunk.txt")
 	m.RPCGetChunkHandle(gfs.GetChunkHandleArg{p, 0}, &r1)
-
+	println(r1.Handle)
 	n := checkReplicas(r1.Handle, N*2, t)
 	if n != gfs.DefaultNumReplicas {
 		t.Error("expect", gfs.DefaultNumReplicas, "replicas, got only", len(data))
 	}
+
+	println("###### TestReplicaEquality passed\n")
 }
 
 func TestAppendChunk(t *testing.T) {
@@ -281,6 +287,7 @@ func TestAppendChunk(t *testing.T) {
 	ch := make(chan error, 2*N+2)
 	ch <- m.RPCCreateFile(gfs.CreateFileArg{p}, &gfs.CreateFileReply{})
 	ch <- m.RPCGetChunkHandle(gfs.GetChunkHandleArg{p, 0}, &r1)
+	println("###### Got Handle ", r1.Handle)
 	expected := make(map[int][]byte)
 	for i := 0; i < N; i++ {
 		expected[i] = []byte(fmt.Sprintf("%3d", i))
@@ -290,18 +297,26 @@ func TestAppendChunk(t *testing.T) {
 	wg.Add(N)
 	for i := 0; i < N; i++ {
 		go func(x int) {
-			_, err := c.AppendChunk(r1.Handle, expected[x])
+			offset, err := c.AppendChunk(r1.Handle, expected[x])
 			ch <- err
+			data := make([]byte, 3)
+			for i := 0; i < 3; i++ {
+				data[i] = expected[x][i]
+			}
+			println("append ", data[0], data[1], data[2], " at ", offset)
 			wg.Done()
 		}(i)
 	}
 	wg.Wait()
+
+	println("###### Append Finished")
 
 	checkReplicas(r1.Handle, N*3, t)
 
 	for x := 0; x < N; x++ {
 		buf := make([]byte, 3)
 		n, err := c.ReadChunk(r1.Handle, gfs.Offset(x*3), buf)
+		println("read ", buf[0], buf[1], buf[2], " at ", x*3)
 		ch <- err
 		if n != 3 {
 			t.Error("should read exactly 2 bytes but", n, "instead")

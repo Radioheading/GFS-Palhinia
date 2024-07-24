@@ -126,7 +126,7 @@ func (cs *ChunkServer) ApplyMutationOnChunk(handle gfs.ChunkHandle, m *Mutation)
 	f, err := os.OpenFile(my_path, os.O_WRONLY|os.O_CREATE, 0777)
 
 	log.Info(cs.address, ": plan to apply mutation~, path: ", my_path)
-	log.Info("write data: ", m.data)
+	log.Info("write data: ", m.data, ", at offset: ", m.offset)
 
 	if err != nil {
 		return err
@@ -233,7 +233,9 @@ func (cs *ChunkServer) ReadChunk(handle gfs.ChunkHandle, offset gfs.Offset, leng
 }
 
 // WriteChunk writes the chunk data to disk
-func (cs *ChunkServer) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byte) error {
+func (cs *ChunkServer) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byte) (*chunkInfo, error) {
+	log.Info("write chunk: ", handle, " offset: ", offset, " data: ", data)
+
 	cs.chunkProtector.RLock()
 
 	var chunk *chunkInfo
@@ -241,22 +243,21 @@ func (cs *ChunkServer) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, dat
 
 	if chunk, ok = cs.chunk[handle]; !ok {
 		cs.chunkProtector.RUnlock()
-		return fmt.Errorf("Chunk %v not found", handle)
+		return nil, fmt.Errorf("chunk %v not found", handle)
 	}
 
 	cs.chunkProtector.RUnlock()
 	chunk.Lock()
-	defer chunk.Unlock()
 	err := cs.ApplyMutationOnChunk(handle, &Mutation{mtype: gfs.MutationWrite, version: chunk.version, data: data, offset: offset})
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	chunk.length = util.Max(chunk.length, offset+gfs.Offset(len(data)))
 	chunk.version = chunk.newestVersion
 
-	return nil
+	return chunk, nil
 }
 
 // RPCReadChunk is called by client, read chunk data and return
@@ -282,11 +283,13 @@ func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChu
 		return fmt.Errorf("DataID %v not found", args.DataID)
 	}
 
-	err := cs.WriteChunk(args.DataID.Handle, args.Offset, op_data)
+	chunk, err := cs.WriteChunk(args.DataID.Handle, args.Offset, op_data)
 
-	if err != nil {
+	if err != nil || chunk == nil {
 		return err
 	}
+
+	defer chunk.Unlock()
 
 	// ask mutation to be done on all secondaries
 	err = util.CallAll(args.Secondaries, "ChunkServer.RPCApplyMutation", gfs.ApplyMutationArg{DataID: args.DataID, Mtype: gfs.MutationWrite, Offset: args.Offset})
@@ -306,12 +309,16 @@ func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChu
 // pad current chunk and ask the client to retry on the next chunk.
 func (cs *ChunkServer) RPCAppendChunk(args gfs.AppendChunkArg, reply *gfs.AppendChunkReply) error {
 	op_data, ok := cs.dl.Get(args.DataID)
+	log.Info("AppendChunk: ", args.DataID.Handle, " ", len(op_data))
+	for i := 0; i < len(op_data); i++ {
+		log.Info(op_data[i])
+	}
 	if !ok {
 		return fmt.Errorf("DataID %v not found", args.DataID)
 	}
 
 	if gfs.Offset(len(op_data)) > gfs.MaxAppendSize {
-		return fmt.Errorf("Append size %v out of bound", len(op_data))
+		return fmt.Errorf("append size %v out of bound", len(op_data))
 	}
 
 	cs.chunkProtector.RLock()
@@ -320,15 +327,16 @@ func (cs *ChunkServer) RPCAppendChunk(args gfs.AppendChunkArg, reply *gfs.Append
 
 	if chunk, ok = cs.chunk[args.DataID.Handle]; !ok {
 		cs.chunkProtector.RUnlock()
-		return fmt.Errorf("Chunk %v not found", args.DataID.Handle)
+		return fmt.Errorf("chunk %v not found", args.DataID.Handle)
 	}
 
 	cs.chunkProtector.RUnlock()
 	chunk.Lock()
-	defer chunk.Unlock()
 
 	m := gfs.ApplyMutationArg{DataID: args.DataID, Offset: chunk.length}
 	reply.Offset = chunk.length
+
+	log.Info("AppendChunk: ", args.DataID.Handle, " ", chunk.length)
 
 	if chunk.length+gfs.Offset(len(op_data)) > gfs.MaxChunkSize { // need to pad the current chunk
 		m.Mtype = gfs.MutationPad
@@ -339,16 +347,21 @@ func (cs *ChunkServer) RPCAppendChunk(args gfs.AppendChunkArg, reply *gfs.Append
 		reply.ErrorCode = gfs.Success
 	}
 
-	err := cs.WriteChunk(args.DataID.Handle, chunk.length, op_data)
+	log.Info("use writechunk to apply mutation, data: ", op_data)
+	chunk.Unlock()
 
-	if err != nil {
+	chunk, err := cs.WriteChunk(args.DataID.Handle, chunk.length, op_data)
+
+	if err != nil || chunk == nil {
 		return err
 	}
+
+	defer chunk.Unlock()
 
 	if m.Mtype == gfs.MutationPad {
 		chunk.length = gfs.MaxChunkSize
 	} else {
-		chunk.length += gfs.Offset(len(op_data))
+		// chunk.length += gfs.Offset(len(op_data))
 	}
 
 	return util.CallAll(args.Secondaries, "ChunkServer.RPCApplyMutation", m)
@@ -389,7 +402,9 @@ func (cs *ChunkServer) RPCApplyMutation(args gfs.ApplyMutationArg, reply *gfs.Ap
 
 	cs.chunk[args.DataID.Handle].newestVersion = args.Version
 	cs.chunk[args.DataID.Handle].version = args.Version
+	log.Info("before length: ", cs.chunk[args.DataID.Handle].length)
 	cs.chunk[args.DataID.Handle].length = util.Max(cs.chunk[args.DataID.Handle].length, args.Offset+gfs.Offset(len(opdata)))
+	log.Info("after length: ", cs.chunk[args.DataID.Handle].length)
 	return nil
 }
 

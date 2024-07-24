@@ -194,13 +194,18 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 
 		servers, err := m.csm.ChooseServers(gfs.DefaultNumReplicas)
 
+		log.Info("done choose servers: ", servers)
+
 		if err != nil {
+			log.Info("ChooseServers error: ", err)
 			return err
 		}
 
 		var valid_addr []gfs.ServerAddress
 
 		reply.Handle, valid_addr, err = m.cm.CreateChunk(args.Path, servers)
+
+		log.Info("CreateChunk: ", reply.Handle, " ", valid_addr)
 
 		if err != nil {
 			return err
@@ -232,6 +237,7 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 		m.csm.AddChunk(valid_addr, reply.Handle)
 		return nil
 	} else {
+		log.Info("already exists, get handle: ", args.Index)
 		reply.Handle, err = m.cm.GetChunk(args.Path, args.Index)
 		return err
 	}

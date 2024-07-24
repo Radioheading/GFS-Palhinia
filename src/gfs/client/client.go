@@ -352,11 +352,17 @@ func (c *Client) AppendChunk(handle gfs.ChunkHandle, data []byte) (offset gfs.Of
 		return 0, err
 	}
 
+	log.Info("Begin to append to chunk: ", handle)
+
 	// append to chunks
 	args := gfs.AppendChunkArg{DataID: pushDataReply.DataID, Secondaries: leaseBuf.Secondaries}
 	r := &gfs.AppendChunkReply{}
 
 	err = util.Call(leaseBuf.Primary, "ChunkServer.RPCAppendChunk", args, r)
+
+	if err != nil {
+		return r.Offset, gfs.Error{Code: r.ErrorCode, Err: "Append Failed!"}
+	}
 
 	if r.ErrorCode == gfs.AppendExceedChunkSize {
 		return r.Offset, gfs.Error{Code: r.ErrorCode, Err: "AppendExceedChunkSize!"}
