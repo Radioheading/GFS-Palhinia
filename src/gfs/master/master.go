@@ -1,9 +1,11 @@
 package master
 
 import (
+	"encoding/gob"
 	"fmt"
 	"net"
 	"net/rpc"
+	"os"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -23,6 +25,11 @@ type Master struct {
 	csm *chunkServerManager
 }
 
+type PersistMaster struct {
+	NamespaceInfo []persistNsTree
+	ChunkInfo     persistChunkManager
+}
+
 // NewAndServe starts a master and returns the pointer to it.
 func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 	m := &Master{
@@ -34,6 +41,7 @@ func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 	m.nm = newNamespaceManager()
 	m.cm = newChunkManager()
 	m.csm = newChunkServerManager()
+	m.masterRestoreMeta()
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(m)
@@ -67,16 +75,21 @@ func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 
 	// Background Task
 	go func() {
-		ticker := time.Tick(gfs.BackgroundInterval)
+		ticker 		  := time.Tick(gfs.BackgroundInterval)
+		persistTicker := time.Tick(gfs.MasterPersistTick)
 		for {
+			var err error
+
 			select {
 			case <-m.shutdown:
 				return
+			case <-persistTicker:
+				err = m.masterPersistMeta()
+			case <-ticker:
+				err = m.BackgroundActivity()
 			default:
 			}
-			<-ticker
-
-			err := m.BackgroundActivity()
+			
 			if err != nil {
 				log.Fatal("Background error ", err)
 			}
@@ -88,9 +101,68 @@ func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 	return m
 }
 
+func (m *Master) masterPersistMeta() error {
+	filename := m.serverRoot + "/master.meta"
+
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0755)
+	if err != nil {
+		return err
+	}
+
+	defer file.Close()
+
+	namespacePersist := m.nm.Persist()
+	chunkPersist := m.cm.Persist()
+
+	var persistMaster = &PersistMaster{
+		NamespaceInfo: namespacePersist,
+		ChunkInfo:     chunkPersist,
+	}
+
+	encoder := gob.NewEncoder(file)
+	err = encoder.Encode(persistMaster)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *Master) masterRestoreMeta() error {
+	filename := m.serverRoot + "/master.meta"
+
+	file, err := os.OpenFile(filename, os.O_RDONLY, 0755)
+	if err != nil {
+		return nil;
+	}
+
+	defer file.Close()
+
+	var persistMaster PersistMaster
+	decoder := gob.NewDecoder(file)
+
+	err = decoder.Decode(&persistMaster)
+
+	if err != nil {
+		return err
+	}
+
+	m.nm.antiPersist(persistMaster.NamespaceInfo)
+	m.cm.antiPersist(persistMaster.ChunkInfo)
+
+	return nil
+}
+
 // Shutdown shuts down master
 func (m *Master) Shutdown() {
 	log.Warn("Master is shutting down")
+	err := m.masterPersistMeta()
+
+	if err != nil {
+		log.Error("Persist master meta error: ", err)
+	}
+
 	close(m.shutdown)
 	m.l.Close()
 }
