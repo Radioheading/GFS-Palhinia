@@ -1,6 +1,7 @@
 package chunkserver
 
 import (
+	"encoding/gob"
 	"fmt"
 	"io"
 	"net"
@@ -46,6 +47,95 @@ type chunkInfo struct {
 	mutations     map[gfs.ChunkVersion]*Mutation // mutation buffer
 }
 
+type persistChunkInfo struct {
+	Handle        gfs.ChunkHandle
+	length        gfs.Offset
+	version       gfs.ChunkVersion
+	newestVersion gfs.ChunkVersion
+}
+
+func (ci *chunkInfo) persist() persistChunkInfo {
+	ci.RLock()
+	defer ci.RUnlock()
+
+	return persistChunkInfo{
+		length:        ci.length,
+		version:       ci.version,
+		newestVersion: ci.newestVersion,
+	}
+}
+
+func (cs *ChunkServer) persistChunkServer() {
+	cs.chunkProtector.RLock()
+	defer cs.chunkProtector.RUnlock()
+
+	var persisted []persistChunkInfo
+
+	cs.chunkProtector.RLock()
+	defer cs.chunkProtector.RUnlock()
+
+	for k, v := range cs.chunk {
+		persisted = append(persisted, persistChunkInfo{
+			Handle:        k,
+			length:        v.length,
+			version:       v.version,
+			newestVersion: v.newestVersion,
+		})
+	}
+
+	filename := path.Join(cs.serverRoot, "/chunkserver")
+	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, 0755)
+
+	if err != nil {
+		log.Warning("open file error: ", err)
+	}
+
+	defer file.Close()
+
+	encoder := gob.NewEncoder(file)
+	err = encoder.Encode(persisted)
+
+	if err != nil {
+		log.Fatal("encode error: ", err)
+	}
+
+	log.Info("ChunkServer persisted")
+}
+
+func (cs *ChunkServer) restoreChunkServer() {
+	filename := path.Join(cs.serverRoot, "/chunkserver")
+	file, err := os.OpenFile(filename, os.O_RDONLY, 0755)
+
+	if err != nil {
+		log.Warning("open file error: ", err)
+		return
+	}
+
+	defer file.Close()
+
+	var persisted []persistChunkInfo
+	decoder := gob.NewDecoder(file)
+	err = decoder.Decode(&persisted)
+
+	if err != nil {
+		log.Fatal("decode error: ", err)
+	}
+
+	cs.chunkProtector.Lock()
+	defer cs.chunkProtector.Unlock()
+
+	for _, v := range persisted {
+		cs.chunk[v.Handle] = &chunkInfo{
+			length:        v.length,
+			version:       v.version,
+			newestVersion: v.newestVersion,
+			mutations:     make(map[gfs.ChunkVersion]*Mutation),
+		}
+	}
+
+	log.Info("ChunkServer restored")
+}
+
 // NewAndServe starts a chunkserver and return the pointer to it.
 func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkServer {
 	cs := &ChunkServer{
@@ -65,6 +155,8 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 		log.Exit(1)
 	}
 	cs.l = l
+
+	cs.restoreChunkServer()
 
 	// RPC Handler
 	go func() {
@@ -89,12 +181,16 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 		}
 	}()
 
+	persistTick := time.Tick(gfs.MasterPersistTick)
+
 	// Heartbeat
 	go func() {
 		for {
 			select {
 			case <-cs.shutdown:
 				return
+			case <-persistTick:
+				cs.persistChunkServer()
 			default:
 			}
 			pe := cs.pendingLeaseExtensions.GetAllAndClear()
@@ -148,6 +244,7 @@ func (cs *ChunkServer) ApplyMutationOnChunk(handle gfs.ChunkHandle, m *Mutation)
 func (cs *ChunkServer) Shutdown() {
 	if !cs.dead {
 		log.Warningf("ChunkServer %v shuts down", cs.address)
+		cs.persistChunkServer()
 		cs.dead = true
 		close(cs.shutdown)
 		cs.l.Close()
