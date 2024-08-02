@@ -21,6 +21,20 @@ type chunkManager struct {
 	numChunkHandle   gfs.ChunkHandle
 }
 
+// what data should we persist?
+// for chunkInfo, we need to store version, path
+// for fileInfo, we need to store all of its handles
+// actually, we don't need to store location, as we will
+// ping each address when master restarts
+
+type persistChunkManager struct {
+	versions     []gfs.ChunkVersion
+	handles      []gfs.ChunkHandle
+	paths        []gfs.Path
+	file_handles [][]gfs.ChunkHandle
+	numHandles   gfs.ChunkHandle
+}
+
 type chunkInfo struct {
 	sync.RWMutex
 	location util.ArraySet     // set of replica locations
@@ -46,6 +60,57 @@ func newChunkManager() *chunkManager {
 		file:  make(map[gfs.Path]*fileInfo),
 	}
 	return cm
+}
+
+// Persist persists the chunk manager to disk
+func (cm *chunkManager) Persist() persistChunkManager {
+	cm.RLock()
+	defer cm.RUnlock()
+
+	var ret persistChunkManager
+
+	for handle, info := range cm.chunk {
+		info.RLock()
+		ret.versions = append(ret.versions, info.version)
+		info.RUnlock()
+		ret.handles = append(ret.handles, handle)
+	}
+
+	for path, info := range cm.file {
+		ret.paths = append(ret.paths, path)
+		ret.file_handles = append(ret.file_handles, info.handles)
+	}
+
+	ret.numHandles = cm.numChunkHandle
+
+	return ret
+}
+
+func (cm *chunkManager) antiPersist(pcm persistChunkManager) {
+	cm.Lock()
+	defer cm.Unlock()
+
+	for i, handle := range pcm.handles {
+		info := &chunkInfo{
+			location: util.ArraySet{},
+			primary:  "",
+			expire:   time.Now(),
+			path:     "",
+			version:  pcm.versions[i],
+		}
+
+		cm.chunk[handle] = info
+	}
+
+	for i, path := range pcm.paths {
+		info := &fileInfo{
+			handles: pcm.file_handles[i],
+		}
+
+		cm.file[path] = info
+	}
+
+	cm.numChunkHandle = pcm.numHandles
 }
 
 // RegisterReplica adds a replica for a chunk

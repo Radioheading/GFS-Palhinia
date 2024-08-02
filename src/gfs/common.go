@@ -74,7 +74,7 @@ const (
 	RetryInterval      = 50 * time.Millisecond
 	ServerTimeout      = 1 * time.Second //
 
-	MaxChunkSize  = 512 << 10 // 512KB DEBUG ONLY 64 << 20
+	MaxChunkSize  = 32 // 512KB DEBUG ONLY 64 << 20
 	MaxAppendSize = MaxChunkSize / 4
 
 	DefaultNumReplicas = 3
@@ -84,6 +84,11 @@ const (
 	DownloadBufferTick   = 10 * time.Second
 
 	LeaseBufferTick = 500 * time.Second
+
+	// master
+	ServerCheckInterval = 500 * time.Millisecond
+	MasterPersistTick   = 1 * time.Hour
+
 )
 
 func (path Path) ParseLeafname() (Path, string) {

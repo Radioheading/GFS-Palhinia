@@ -50,9 +50,9 @@ func (c *Client) Read(path gfs.Path, offset gfs.Offset, data []byte) (n int, err
 	end := (int(offset) + len(data) - 1) / gfs.MaxChunkSize
 	cur := start
 	cur_read := 0
+	log.Info("start: ", start, ", end: ", end)
 	for cur <= end {
 		var handle gfs.ChunkHandle
-		var err error
 		handle, err = c.GetChunkHandle(path, gfs.ChunkIndex(cur))
 
 		if err != nil {
@@ -85,11 +85,12 @@ func (c *Client) Read(path gfs.Path, offset gfs.Offset, data []byte) (n int, err
 			}
 
 			if e, ok := new_err.(gfs.Error); ok && e.Code == gfs.ReadEOF {
+				err = io.EOF
 				break
 			}
 
 			time.Sleep(gfs.RetryInterval)
-			log.Info("retry read ", err)
+			log.Info("retry read ", new_err)
 		}
 
 		cur++
@@ -112,6 +113,7 @@ func (c *Client) Write(path gfs.Path, offset gfs.Offset, data []byte) error {
 	start := int(offset) / gfs.MaxChunkSize
 	end := (int(offset) + len(data) - 1) / gfs.MaxChunkSize
 	cur := start
+	cur_write := 0
 	for cur <= end {
 		var handle gfs.ChunkHandle
 		var err error
@@ -121,9 +123,9 @@ func (c *Client) Write(path gfs.Path, offset gfs.Offset, data []byte) error {
 			return err
 		}
 		// read range [lhs, rhs]
+
 		var lhs int
 		var rhs int
-		cur_write := 0
 
 		if cur == start {
 			lhs = int(offset)
@@ -141,6 +143,7 @@ func (c *Client) Write(path gfs.Path, offset gfs.Offset, data []byte) error {
 
 		for { // write until we reach success
 			new_err = c.WriteChunk(handle, gfs.Offset(lhs%gfs.MaxChunkSize), data[cur_write:cur_write+rhs-lhs])
+			// log.Info("&data written on chunk: ", handle, " is: ", string(data[cur_write:cur_write+rhs-lhs]))
 
 			if new_err == nil {
 				break
@@ -200,7 +203,7 @@ func (c *Client) Append(path gfs.Path, data []byte) (offset gfs.Offset, err erro
 		for {
 			internalOffset, err = c.AppendChunk(handle, data)
 
-			if err != nil {
+			if err == nil {
 				break
 			}
 
@@ -285,7 +288,7 @@ func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []by
 		return fmt.Errorf("WriteChunk: write exceeds chunk size")
 	}
 
-	log.Info("write chunk; handle: ", handle, " offset: ", offset, " data: ", data)
+	// log.Info("write chunk; handle: ", handle, " offset: ", offset, " data: ", data)
 
 	leaseBuf, err := c.buffer.GetLease(handle)
 

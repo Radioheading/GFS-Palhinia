@@ -90,7 +90,9 @@ func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 
 // Shutdown shuts down master
 func (m *Master) Shutdown() {
+	log.Warn("Master is shutting down")
 	close(m.shutdown)
+	m.l.Close()
 }
 
 // BackgroundActivity does all the background activities:
