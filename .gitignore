@@ -31,3 +31,4 @@ _testmain.go
 *.prof
 
 src/gfs/go1.22.5.linux-amd64.tar.gz
+src/gfs/log.txt
