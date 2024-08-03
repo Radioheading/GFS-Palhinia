@@ -101,7 +101,9 @@ type HeartbeatArg struct {
 	Address         ServerAddress // chunkserver address
 	LeaseExtensions []ChunkHandle // leases to be extended
 }
-type HeartbeatReply struct{}
+type HeartbeatReply struct {
+	Garbages []ChunkHandle
+}
 
 type GetPrimaryAndSecondariesArg struct {
 	Handle ChunkHandle

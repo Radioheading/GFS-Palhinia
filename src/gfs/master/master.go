@@ -75,7 +75,7 @@ func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 
 	// Background Task
 	go func() {
-		ticker 		  := time.Tick(gfs.BackgroundInterval)
+		ticker := time.Tick(gfs.BackgroundInterval)
 		persistTicker := time.Tick(gfs.MasterPersistTick)
 		for {
 			var err error
@@ -89,7 +89,7 @@ func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 				err = m.BackgroundActivity()
 			default:
 			}
-			
+
 			if err != nil {
 				log.Fatal("Background error ", err)
 			}
@@ -134,7 +134,7 @@ func (m *Master) masterRestoreMeta() error {
 
 	file, err := os.OpenFile(filename, os.O_RDONLY, 0755)
 	if err != nil {
-		return nil;
+		return nil
 	}
 
 	defer file.Close()
@@ -176,19 +176,26 @@ func (m *Master) BackgroundActivity() error {
 // RPCHeartbeat is called by chunkserver to let the master know that a chunkserver is alive.
 // Lease extension request is included.
 func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) error {
-	m.csm.Heartbeat(args.Address)
+	var garbages = make([]gfs.ChunkHandle, 0)
+	m.csm.Heartbeat(args.Address, garbages)
+	reply.Garbages = garbages
+
+	// for _, handle := range args.LeaseExtensions {
+	// 	m.cm.ExtendLease(handle, args.Address)
+	// }
+
 	return nil
-	// todo: lease extension
 }
 
 // RPCGetPrimaryAndSecondaries returns lease holder and secondaries of a chunk.
 // If no one holds the lease currently, grant one.
 func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesArg, reply *gfs.GetPrimaryAndSecondariesReply) error {
-	lease, err := m.cm.GetLeaseHolder(args.Handle)
+	lease, err, staleServers := m.cm.GetLeaseHolder(args.Handle)
 	if err != nil {
 		return err
 	}
 
+	m.csm.FillGarbage(staleServers, args.Handle)
 	reply.Primary = lease.primary
 	reply.Secondaries = lease.secondaries
 	reply.Expire = lease.expire

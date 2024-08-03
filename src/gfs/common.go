@@ -86,9 +86,9 @@ const (
 	LeaseBufferTick = 500 * time.Second
 
 	// master
-	ServerCheckInterval = 500 * time.Millisecond
-	MasterPersistTick   = 1 * time.Hour
-
+	ServerCheckInterval   = 500 * time.Millisecond
+	MasterPersistTick     = 30 * time.Hour
+	GarbageCollectionTick = 24 * time.Second
 )
 
 func (path Path) ParseLeafname() (Path, string) {

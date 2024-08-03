@@ -29,10 +29,24 @@ func newChunkServerManager() *chunkServerManager {
 type chunkServerInfo struct {
 	lastHeartbeat time.Time
 	chunks        map[gfs.ChunkHandle]bool // set of chunks that the chunkserver has
+	// GFS devises lazy garbage collection mechanism, so we need to persist the chunk information
+	garbageList []gfs.ChunkHandle
+}
+
+// fill ruubish
+func (csm *chunkServerManager) FillGarbage(addrs []gfs.ServerAddress, handle gfs.ChunkHandle) error {
+	csm.Lock()
+	defer csm.Unlock()
+	for _, addr := range addrs {
+		if server, ok := csm.servers[addr]; ok {
+			server.garbageList = append(server.garbageList, handle)
+		}
+	}
+	return nil
 }
 
 // Hearbeat marks the chunkserver alive for now.
-func (csm *chunkServerManager) Heartbeat(addr gfs.ServerAddress) bool {
+func (csm *chunkServerManager) Heartbeat(addr gfs.ServerAddress, garbages []gfs.ChunkHandle) bool {
 	csm.Lock()
 	defer csm.Unlock()
 	if server, ok := csm.servers[addr]; !ok {
@@ -44,6 +58,8 @@ func (csm *chunkServerManager) Heartbeat(addr gfs.ServerAddress) bool {
 		return true
 	} else {
 		server.lastHeartbeat = time.Now()
+		garbages = append(server.garbageList, garbages...)
+		csm.servers[addr].garbageList = make([]gfs.ChunkHandle, 0)
 		return false
 	}
 }

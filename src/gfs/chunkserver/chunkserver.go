@@ -30,6 +30,8 @@ type ChunkServer struct {
 	pendingLeaseExtensions *util.ArraySet                 // pending lease extension
 	chunk                  map[gfs.ChunkHandle]*chunkInfo // chunk information
 	chunkProtector         sync.RWMutex                   // protect chunk map
+	// GFS devises lazy garbage collection mechanism, so we need to persist the chunk information
+	garbageList []gfs.ChunkHandle
 }
 
 type Mutation struct {
@@ -52,17 +54,6 @@ type persistChunkInfo struct {
 	length        gfs.Offset
 	version       gfs.ChunkVersion
 	newestVersion gfs.ChunkVersion
-}
-
-func (ci *chunkInfo) persist() persistChunkInfo {
-	ci.RLock()
-	defer ci.RUnlock()
-
-	return persistChunkInfo{
-		length:        ci.length,
-		version:       ci.version,
-		newestVersion: ci.newestVersion,
-	}
 }
 
 func (cs *ChunkServer) persistChunkServer() {
@@ -181,39 +172,57 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 		}
 	}()
 
-	persistTick := time.Tick(gfs.MasterPersistTick)
-
 	// Heartbeat
 	go func() {
+		persistTick := time.Tick(gfs.MasterPersistTick)
+		garbageTick := time.Tick(gfs.GarbageCollectionTick)
+		heartbeatTick := time.Tick(gfs.HeartbeatInterval)
+		quickStart := make(chan struct{})
+		quickStart <- struct{}{}
 		for {
 			select {
 			case <-cs.shutdown:
 				return
 			case <-persistTick:
 				cs.persistChunkServer()
-			default:
+			case <-garbageTick:
+				// garbage collection
+				for _, handle := range cs.garbageList {
+					if cs.removeChunk(handle) != nil {
+						log.Warning("remove chunk failed: ", handle)
+					}
+				}
+				cs.garbageList = make([]gfs.ChunkHandle, 0)
+			case <-quickStart:
+				cs.heartbeatRoutine()
+			case <-heartbeatTick:
+				cs.heartbeatRoutine()
 			}
-			pe := cs.pendingLeaseExtensions.GetAllAndClear()
-			le := make([]gfs.ChunkHandle, len(pe))
-			for i, v := range pe {
-				le[i] = v.(gfs.ChunkHandle)
-			}
-			args := &gfs.HeartbeatArg{
-				Address:         addr,
-				LeaseExtensions: le,
-			}
-			if err := util.Call(cs.master, "Master.RPCHeartbeat", args, nil); err != nil {
-				log.Fatal("heartbeat rpc error ", err)
-				log.Exit(1)
-			}
-
-			time.Sleep(gfs.HeartbeatInterval)
 		}
 	}()
 
 	log.Infof("ChunkServer is now running. addr = %v, root path = %v, master addr = %v", addr, serverRoot, masterAddr)
 
 	return cs
+}
+
+func (cs *ChunkServer) heartbeatRoutine() {
+	pe := cs.pendingLeaseExtensions.GetAllAndClear()
+	le := make([]gfs.ChunkHandle, len(pe))
+	for i, v := range pe {
+		le[i] = v.(gfs.ChunkHandle)
+	}
+	args := &gfs.HeartbeatArg{
+		Address:         cs.address,
+		LeaseExtensions: le,
+	}
+	reply := &gfs.HeartbeatReply{}
+	if err := util.Call(cs.master, "Master.RPCHeartbeat", args, reply); err != nil {
+		log.Fatal("heartbeat rpc error ", err)
+		log.Exit(1)
+	}
+
+	cs.garbageList = append(cs.garbageList, reply.Garbages...)
 }
 
 // ApplyMutationOnChunk applies mutation to the chunk
@@ -584,4 +593,14 @@ func (cs *ChunkServer) RPCAdjustVersion(args gfs.AdjustChunkVersionArg, reply *g
 	}
 
 	return nil
+}
+
+// removeChunk removes the chunk from the chunkserver
+func (cs *ChunkServer) removeChunk(handle gfs.ChunkHandle) error {
+	cs.chunkProtector.Lock()
+	defer cs.chunkProtector.Unlock()
+	delete(cs.chunk, handle)
+
+	filename := path.Join(cs.serverRoot, fmt.Sprintf("%v", handle))
+	return os.Remove(filename)
 }

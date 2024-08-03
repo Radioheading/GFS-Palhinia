@@ -167,7 +167,9 @@ func (cm *chunkManager) GetChunk(path gfs.Path, index gfs.ChunkIndex) (gfs.Chunk
 // GetLeaseHolder returns the chunkserver that hold the lease of a chunk
 // (i.e. primary) and expire time of the lease. If no one has a lease,
 // grants one to a replica it chooses.
-func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
+// note: we detect a chunkserver having obsolete version or fail to connect,
+// we add it to waitlist for garbage collection.
+func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error, []gfs.ServerAddress) {
 	log.Info("get lease holder for chunk ", handle)
 
 	cm.RLock()
@@ -177,13 +179,14 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
 
 	if chunk, ok = cm.chunk[handle]; !ok {
 		cm.RUnlock()
-		return nil, fmt.Errorf("chunk %d not found", handle)
+		return nil, fmt.Errorf("chunk %d not found", handle), nil
 	}
 
 	cm.RUnlock()
 
 	chunk.Lock()
 	defer chunk.Unlock()
+	var staleServers []gfs.ServerAddress
 
 	if chunk.expire.After(time.Now()) {
 		var ret lease
@@ -200,7 +203,7 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
 			}
 		}
 
-		return &ret, nil
+		return &ret, nil, staleServers
 
 	} else { // grant a new lease
 		log.Info("obsolete lease for chunk ", handle, " version ", chunk.version, "; grant a new lease")
@@ -230,6 +233,9 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
 					addrLock.Lock()
 					serverAddr = append(serverAddr, a)
 					addrLock.Unlock()
+				} else {
+					log.Info("stale server ", a, " for chunk ", handle)
+					staleServers = append(staleServers, a)
 				}
 
 				waitGroup.Done()
@@ -266,7 +272,7 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
 			}
 		}
 
-		return &ret, nil
+		return &ret, nil, staleServers
 	}
 }
 
