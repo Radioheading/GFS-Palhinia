@@ -342,3 +342,16 @@ func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (g
 
 	return handle, validAddrs, nil
 }
+
+// HireChunkServer hires a chunkserver to store a chunk.
+// we guarantee the chunkInfo's writeLock is held by the caller.
+func (cm *chunkManager) HireChunkServer(args gfs.HireChunkServerArg) error {
+	chunkInfo, ok := cm.chunk[args.Handle]
+
+	if !ok {
+		return fmt.Errorf("chunk %d not found", args.Handle)
+	}
+
+	chunkInfo.location.Add(args.Address)
+	return nil
+}

@@ -3,6 +3,7 @@ package master
 import (
 	"encoding/gob"
 	"fmt"
+	"gfs/util"
 	"net"
 	"net/rpc"
 	"os"
@@ -173,16 +174,62 @@ func (m *Master) BackgroundActivity() error {
 	return nil
 }
 
+// HireChunkServer is called by chunkserver to register itself to the master.
+func (m *Master) HireChunkServer(args gfs.HireChunkServerArg, reply *gfs.HireChunkServerReply) error {
+	err1 := m.cm.HireChunkServer(args)
+	err2 := m.csm.AddChunk([]gfs.ServerAddress{args.Address}, args.Handle)
+
+	if err1 != nil || err2 != nil {
+		return fmt.Errorf("HireChunkServer error: %v %v", err1, err2)
+	}
+
+	return nil
+}
+
 // RPCHeartbeat is called by chunkserver to let the master know that a chunkserver is alive.
 // Lease extension request is included.
 func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) error {
 	var garbages = make([]gfs.ChunkHandle, 0)
-	m.csm.Heartbeat(args.Address, garbages)
+	reboot := m.csm.Heartbeat(args.Address, garbages)
 	reply.Garbages = garbages
 
 	// for _, handle := range args.LeaseExtensions {
 	// 	m.cm.ExtendLease(handle, args.Address)
 	// }
+
+	// note: if we reboots the master, we need to acknowledge each chunkserver
+	if !reboot {
+		return nil
+	}
+
+	var serverStatusReply gfs.GetServerStatusReply
+
+	err := util.Call(args.Address, "ChunkServer.RPCServerStatus", gfs.GetServerStatusArg{}, &serverStatusReply)
+
+	if err != nil {
+		return err
+	}
+
+	for i, handle := range serverStatusReply.Chunks {
+		m.cm.RLock()
+		chunk, ok := m.cm.chunk[handle]
+		nowVersion := chunk.version
+		m.cm.RUnlock()
+
+		if !ok || nowVersion != serverStatusReply.Versions[i] {
+			continue
+		}
+		// up-to-date chunk information
+		chunk.Lock()
+		defer chunk.Unlock()
+
+		if (m.HireChunkServer(gfs.HireChunkServerArg{
+			Address: args.Address,
+			Handle:  handle,
+		}, &gfs.HireChunkServerReply{}) != nil) {
+			log.Warn("HireChunkServer error on address ", args.Address, " handle ", handle)
+		}
+	}
 
 	return nil
 }

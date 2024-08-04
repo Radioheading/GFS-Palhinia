@@ -604,3 +604,23 @@ func (cs *ChunkServer) removeChunk(handle gfs.ChunkHandle) error {
 	filename := path.Join(cs.serverRoot, fmt.Sprintf("%v", handle))
 	return os.Remove(filename)
 }
+
+// RPCGetServerStatus is called by master to check the status of the chunkserver for master information
+// restore after each restart
+func (cs *ChunkServer) RPCGetServerStatus(args gfs.GetServerStatusArg, reply *gfs.GetServerStatusReply) error {
+	cs.chunkProtector.RLock()
+	defer cs.chunkProtector.RUnlock()
+
+	var chunks []gfs.ChunkHandle
+	var versions []gfs.ChunkVersion
+
+	for k, v := range cs.chunk {
+		chunks = append(chunks, k)
+		versions = append(versions, v.version)
+	}
+
+	reply.Chunks = chunks
+	reply.Versions = versions
+
+	return nil
+}

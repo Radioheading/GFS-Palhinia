@@ -58,7 +58,7 @@ func (csm *chunkServerManager) Heartbeat(addr gfs.ServerAddress, garbages []gfs.
 		return true
 	} else {
 		server.lastHeartbeat = time.Now()
-		garbages = append(server.garbageList, garbages...)
+		server.garbageList = append(server.garbageList, garbages...)
 		csm.servers[addr].garbageList = make([]gfs.ChunkHandle, 0)
 		return false
 	}

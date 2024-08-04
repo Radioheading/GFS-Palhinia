@@ -176,3 +176,20 @@ type AdjustChunkVersionArg struct {
 type AdjustChunkVersionReply struct {
 	Stale bool
 }
+
+type GetServerStatusArg struct {
+}
+
+type GetServerStatusReply struct {
+	Chunks   []ChunkHandle
+	Versions []ChunkVersion
+}
+
+type HireChunkServerArg struct {
+	Address ServerAddress
+	Handle  ChunkHandle
+}
+
+type HireChunkServerReply struct {
+	ErrorCode ErrorCode
+}
