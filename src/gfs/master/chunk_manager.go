@@ -355,3 +355,54 @@ func (cm *chunkManager) HireChunkServer(args gfs.HireChunkServerArg) error {
 	chunkInfo.location.Add(args.Address)
 	return nil
 }
+
+// GetObsoleteChunks returns the chunks that are obsolete.
+func (cm *chunkManager) RemoveObsoleteAddresses(handles []gfs.ChunkHandle, address gfs.ServerAddress) error {
+	cm.Lock()
+	defer cm.Unlock()
+
+	for _, handle := range handles {
+		if chunkInfo, ok := cm.chunk[handle]; ok {
+			chunkInfo.Lock()
+			chunkInfo.location.Delete(address)
+			chunkInfo.expire = time.Now()
+			if chunkInfo.location.Size() < gfs.MinimumNumReplicas {
+				cm.replicasWaitlist = append(cm.replicasWaitlist, handle)
+			}
+
+			if chunkInfo.location.Size() == 0 {
+				return fmt.Errorf("chunk %d has no replica", handle)
+			}
+
+			chunkInfo.Unlock()
+		}
+	}
+
+	return nil
+}
+
+// GetUnderReplicatedChunks returns the chunks that are under-replicated.
+func (cm *chunkManager) GetUnderReplicatedChunks() []gfs.ChunkHandle {
+	cm.Lock()
+	defer cm.Unlock()
+
+	var ret []gfs.ChunkHandle
+
+	var need_map = make(map[gfs.ChunkHandle]bool)
+
+	for _, handle := range cm.replicasWaitlist {
+		if _, ok := need_map[handle]; !ok {
+			if chunkInfo, ok := cm.chunk[handle]; ok {
+				chunkInfo.RLock()
+				if chunkInfo.location.Size() < gfs.MinimumNumReplicas {
+					ret = append(ret, handle)
+				}
+				chunkInfo.RUnlock()
+			}
+		}
+	}
+
+	cm.replicasWaitlist = make([]gfs.ChunkHandle, 0)
+
+	return ret
+}

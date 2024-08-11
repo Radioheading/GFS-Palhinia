@@ -171,6 +171,14 @@ func (m *Master) Shutdown() {
 // BackgroundActivity does all the background activities:
 // dead chunkserver handling, garbage collection, stale replica detection, etc
 func (m *Master) BackgroundActivity() error {
+	if err := m.RemoveServers(); err != nil {
+		return err
+	}
+
+	if err := m.ReReplicateChunks(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -380,6 +388,74 @@ func (m *Master) RPCList(args gfs.ListArg, reply *gfs.ListReply) error {
 	}
 
 	reply.Files = ret
+
+	return nil
+}
+
+// RemoveServers is called by master to remove obsolete servers from the system
+func (m *Master) RemoveServers() error {
+	obsoleteServers := m.csm.GetObsoleteServers()
+
+	for _, server := range obsoleteServers {
+		handles, err := m.csm.RemoveServer(server)
+
+		if err != nil {
+			return err
+		}
+
+		err = m.cm.RemoveObsoleteAddresses(handles, server)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ReReplicateChunks is called by master to re-replicate chunks that are under-replicated
+func (m *Master) ReReplicateChunks() error {
+	handles := m.cm.GetUnderReplicatedChunks()
+
+	m.cm.RLock()
+
+	for _, handle := range handles {
+		ck := m.cm.chunk[handle]
+
+		if ck.expire.Before(time.Now()) {
+			ck.Lock()
+
+			from, to, err := m.csm.ChooseReReplication(handle)
+
+			if err != nil {
+				ck.Unlock()
+				return err
+			}
+
+			err = util.Call(to, "ChunkServer.RPCCreateChunk", gfs.CreateChunkArg{Handle: handle}, &gfs.CreateChunkReply{})
+			if err != nil {
+				return err
+			}
+
+			err = util.Call(from, "ChunkServer.RPCSendCopy", gfs.SendCopyArg{Handle: handle, Address: to}, &gfs.SendCopyReply{})
+			if err != nil {
+				return err
+			}
+
+			err = m.cm.HireChunkServer(gfs.HireChunkServerArg{
+				Address: to,
+				Handle:  handle,
+			})
+			if err != nil {
+				return err
+			}
+
+			m.csm.AddChunk([]gfs.ServerAddress{to}, handle)
+
+			ck.Unlock()
+		}
+	}
+
+	m.cm.RUnlock()
 
 	return nil
 }

@@ -189,3 +189,17 @@ func (csm *chunkServerManager) RemoveServer(addr gfs.ServerAddress) (handles []g
 	err = fmt.Errorf("RemoveServer: no such server")
 	return
 }
+
+// GetObsoleteServers returns the servers that are obsolete.
+func (csm *chunkServerManager) GetObsoleteServers() []gfs.ServerAddress {
+	csm.RLock()
+	defer csm.RUnlock()
+
+	obsolete := make([]gfs.ServerAddress, 0)
+	for addr, server := range csm.servers {
+		if server.lastHeartbeat.Add(gfs.ServerTimeout).Before(time.Now()) {
+			obsolete = append(obsolete, addr)
+		}
+	}
+	return obsolete
+}
