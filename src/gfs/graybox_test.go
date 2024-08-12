@@ -722,6 +722,7 @@ func TestReReplication(t *testing.T) {
 // some file operations to check if the server is still working
 func checkWork(p gfs.Path, msg []byte, t *testing.T) {
 	ch := make(chan error, 6)
+	log.Info("checkWork path: ", p)
 
 	// append again to confirm all information about this chunk has been reloaded properly
 	offset, err := c.Append(p, msg)
@@ -738,7 +739,7 @@ func checkWork(p gfs.Path, msg []byte, t *testing.T) {
 		t.Errorf("[check 1]read wrong data \"%v\", expect \"%v\"", string(buf), string(msg))
 	}
 
-	// other file operation
+	// // other file operation
 	ch <- c.Mkdir(gfs.Path("/" + string(msg)))
 	newfile := gfs.Path("/" + string(msg) + "/" + string(msg) + ".txt")
 	ch <- c.Create(newfile)
@@ -809,10 +810,10 @@ func TestPersistentMaster(t *testing.T) {
 	m = master.NewAndServe(mAdd, path.Join(root, "m"))
 	time.Sleep(2 * gfs.ServerTimeout)
 
+	errorAll(ch, 3, t)
 	// check recovery
 	checkWork(p, msg, t)
 
-	errorAll(ch, 3, t)
 }
 
 // delete all files in two chunkservers ...

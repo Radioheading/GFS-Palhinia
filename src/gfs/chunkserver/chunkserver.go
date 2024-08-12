@@ -221,8 +221,8 @@ func (cs *ChunkServer) heartbeatRoutine() {
 	}
 	reply := &gfs.HeartbeatReply{}
 	if err := util.Call(cs.master, "Master.RPCHeartbeat", args, reply); err != nil {
-		log.Fatal("heartbeat rpc error ", err)
-		log.Exit(1)
+		log.Warning("heartbeat rpc error ", err)
+		// log.Exit(1)
 	}
 
 	cs.garbageList = append(cs.garbageList, reply.Garbages...)
@@ -508,8 +508,9 @@ func (cs *ChunkServer) RPCApplyMutation(args gfs.ApplyMutationArg, reply *gfs.Ap
 		return err
 	}
 
-	cs.chunk[args.DataID.Handle].newestVersion = args.Version
-	cs.chunk[args.DataID.Handle].version = args.Version
+	// cs.chunk[args.DataID.Handle].newestVersion = args.Version
+	// cs.chunk[args.DataID.Handle].version = args.Version
+	log.Info("version: ", cs.chunk[args.DataID.Handle].version)
 	log.Info("before length: ", cs.chunk[args.DataID.Handle].length)
 	cs.chunk[args.DataID.Handle].length = util.Max(cs.chunk[args.DataID.Handle].length, args.Offset+gfs.Offset(len(opdata)))
 	log.Info("after length: ", cs.chunk[args.DataID.Handle].length)
@@ -572,7 +573,7 @@ func (cs *ChunkServer) RPCApplyCopy(args gfs.ApplyCopyArg, reply *gfs.ApplyCopyR
 // AdjustVersion is called by master to check whether the chunkserver
 // holds the latest version of the chunk.
 func (cs *ChunkServer) RPCAdjustVersion(args gfs.AdjustChunkVersionArg, reply *gfs.AdjustChunkVersionReply) error {
-	log.Info("Adjusting version for ", args.Handle)
+	log.Info("Adjusting version for ", cs.address)
 	cs.chunkProtector.RLock()
 	defer cs.chunkProtector.RUnlock()
 
@@ -587,6 +588,9 @@ func (cs *ChunkServer) RPCAdjustVersion(args gfs.AdjustChunkVersionArg, reply *g
 	defer chunk.Unlock()
 
 	chunk.version++
+	chunk.newestVersion++
+
+	log.Info("Chunk ", args.Handle, " version adjusted to ", chunk.version, " on ", cs.address)
 
 	if chunk.version < args.Version {
 		log.Warningf("Chunk %v version is outdated, current version %v, master version %v", args.Handle, chunk.version, args.Version)
@@ -617,7 +621,10 @@ func (cs *ChunkServer) RPCGetServerStatus(args gfs.GetServerStatusArg, reply *gf
 	var chunks []gfs.ChunkHandle
 	var versions []gfs.ChunkVersion
 
+	log.Info("get server status for ", cs.address)
 	for k, v := range cs.chunk {
+
+		log.Info("chunk: ", k, " version: ", v.version, " length: ", v.length, " newestVersion: ", v.newestVersion)
 		chunks = append(chunks, k)
 		versions = append(versions, v.version)
 	}

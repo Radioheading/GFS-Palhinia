@@ -185,8 +185,6 @@ func (csm *chunkServerManager) RemoveServer(addr gfs.ServerAddress) (handles []g
 			}
 		}
 	}
-
-	err = fmt.Errorf("RemoveServer: no such server")
 	return
 }
 

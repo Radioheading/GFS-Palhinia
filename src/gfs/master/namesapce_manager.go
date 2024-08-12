@@ -66,7 +66,7 @@ func dfs(u *nsTree, name string, fid int, cur_id *int, array *[]persistNsTree) {
 
 // func persist for namespace tree, we need to lock the root node and call dfs
 func (nm *namespaceManager) Persist() []persistNsTree {
-	var id int
+	id := 0
 	var array []persistNsTree
 	nm.root.Lock()
 	dfs(nm.root, "nm-lock", 0, &id, &array)
@@ -80,6 +80,7 @@ func (nm *namespaceManager) antiPersist(array []persistNsTree) {
 	cur_restore := make(map[int]*nsTree)
 
 	for _, v := range array {
+		log.Info("restore id: ", v.Id, " fid: ", v.Fid, " name: ", v.Name, " isDir: ", v.IsDir, " length: ", v.Length, " chunks: ", v.Chunks)
 		var u *nsTree
 		if v.Fid == 0 { // this is root
 			u = nm.root
@@ -91,9 +92,14 @@ func (nm *namespaceManager) antiPersist(array []persistNsTree) {
 		if v.Fid != 0 && cur_restore[v.Fid] != nil {
 			father := cur_restore[v.Fid]
 			father.children[v.Name] = u
+			log.Info("restore father: ", v.Fid, " name: ", v.Name)
 		}
 	}
+
 	nm.root.Unlock()
+
+	log.Info("***LYS")
+	nm.GetFileInfo(gfs.Path("/persistent/master.txt"), &gfs.GetFileInfoReply{})
 }
 
 // acquire read lock along the parents (e.g. /d1/d2/.../dn/leaf):
@@ -105,7 +111,7 @@ func (nm *namespaceManager) antiPersist(array []persistNsTree) {
 func (nm *namespaceManager) lockParents(paths []string, RLockLeaf bool) (*nsTree, error) {
 	log.Info("lockParents: ", paths)
 	cur := nm.root
-	for i := 0; i < len(paths)-1; i++ {
+	for i := 0; i < len(paths); i++ {
 		if cur.children[paths[i]] == nil {
 			return nil, fmt.Errorf("path %v does not exist", paths[i])
 		} else {
@@ -129,7 +135,7 @@ func (nm *namespaceManager) lockParents(paths []string, RLockLeaf bool) (*nsTree
 // func unloockParents for releasing read lock along the parents
 func (nm *namespaceManager) unlockParents(paths []string, RLockLeaf bool) {
 	cur := nm.root
-	for i := 0; i < len(paths)-1; i++ {
+	for i := 0; i < len(paths); i++ {
 		cur.RUnlock()
 		cur = cur.children[paths[i]]
 	}
@@ -144,6 +150,7 @@ func (nm *namespaceManager) Create(p gfs.Path) error {
 	raw_path, filename := p.ParseLeafname()
 	paths := raw_path.GetPaths()
 	new_node, err := nm.lockParents(paths, false)
+	defer nm.unlockParents(paths, false)
 	new_node.Lock()
 	defer new_node.Unlock()
 	if err != nil {
@@ -178,18 +185,24 @@ func (nm *namespaceManager) Mkdir(p gfs.Path) error {
 	}
 
 	new_node.children[filename] = &nsTree{isDir: true, length: 0, chunks: 0, children: make(map[string]*nsTree)}
-
+	nm.unlockParents(paths, false)
 	return nil
 }
 
 // GetFileInfo returns the information of a file, including length, chunks, isDir
 func (nm *namespaceManager) GetFileInfo(p gfs.Path, reply *gfs.GetFileInfoReply) error {
 	raw_path, filename := p.ParseLeafname()
+	log.Info("GetFileInfo: ", raw_path, "/", filename)
 	paths := raw_path.GetPaths()
-	new_node, err := nm.lockParents(paths, false)
-	defer nm.unlockParents(paths, false)
+	new_node, err := nm.lockParents(paths, true)
+	defer nm.unlockParents(paths, true)
 	if err != nil {
 		return err
+	}
+	// log.Info("$no fault in lockParents")
+
+	for name, v := range new_node.children {
+		log.Info("$GetFileInfo: ", name, " isDir: ", v.isDir, " length: ", v.length, " chunks: ", v.chunks)
 	}
 
 	if new_node.children[filename] == nil {

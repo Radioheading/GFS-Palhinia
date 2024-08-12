@@ -370,9 +370,9 @@ func (cm *chunkManager) RemoveObsoleteAddresses(handles []gfs.ChunkHandle, addre
 				cm.replicasWaitlist = append(cm.replicasWaitlist, handle)
 			}
 
-			if chunkInfo.location.Size() == 0 {
-				return fmt.Errorf("chunk %d has no replica", handle)
-			}
+			// if chunkInfo.location.Size() == 0 {
+			// 	return fmt.Errorf("chunk %d has no replica", handle)
+			// }
 
 			chunkInfo.Unlock()
 		}

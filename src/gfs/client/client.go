@@ -170,6 +170,7 @@ func (c *Client) Write(path gfs.Path, offset gfs.Offset, data []byte) error {
 
 // Append appends data to the file. Offset of the beginning of appended data is returned.
 func (c *Client) Append(path gfs.Path, data []byte) (offset gfs.Offset, err error) {
+	log.Info("append data: ", string(data))
 	if len(data) > gfs.MaxAppendSize {
 		return 0, fmt.Errorf("append: out of maxAppendSize")
 	}

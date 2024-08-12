@@ -71,8 +71,8 @@ func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 					conn.Close()
 				}()
 			} else {
-				log.Fatal("accept error:", err)
-				log.Exit(1)
+				// log.Fatal("accept error:", err)
+				// log.Exit(1)
 			}
 		}
 	}()
@@ -138,7 +138,7 @@ func (m *Master) masterRestoreMeta() error {
 
 	file, err := os.OpenFile(filename, os.O_RDONLY, 0755)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	defer file.Close()
@@ -169,7 +169,7 @@ func (m *Master) Shutdown() {
 
 	print("close master channel\n")
 	close(m.shutdown)
-	// m.l.Close()
+	m.l.Close()
 }
 
 // BackgroundActivity does all the background activities:
@@ -216,6 +216,8 @@ func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) 
 		return nil
 	}
 
+	log.Warning("Master reboots, chunkserver ", args.Address, " is acknowledged")
+
 	var serverStatusReply gfs.GetServerStatusReply
 
 	err := util.Call(args.Address, "ChunkServer.RPCGetServerStatus", gfs.GetServerStatusArg{}, &serverStatusReply)
@@ -230,13 +232,16 @@ func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) 
 		nowVersion := chunk.version
 		m.cm.RUnlock()
 
+		log.Info("previous version on addr ", args.Address, " is: ", nowVersion)
+		log.Info("now version on addr ", args.Address, " is: ", serverStatusReply.Versions[i])
+
 		if !ok || nowVersion != serverStatusReply.Versions[i] {
 			continue
 		}
 		// up-to-date chunk information
 		chunk.Lock()
 		defer chunk.Unlock()
-
+		log.Info("up-to-date chunk information: ", handle, " ", args.Address)
 		if (m.HireChunkServer(gfs.HireChunkServerArg{
 			Address: args.Address,
 			Handle:  handle,
@@ -317,9 +322,12 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 
 	defer m.nm.unlockParents(paths, true)
 
+	log.Info("RPCGetChunkHandle: ", filename, " ", new_node)
+
 	chunk_file, ok := new_node.children[filename]
 
 	if !ok {
+		log.Info("LYD")
 		return fmt.Errorf("file %v does not exist", filename)
 	}
 
