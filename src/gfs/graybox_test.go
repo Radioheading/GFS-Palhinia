@@ -365,8 +365,6 @@ func TestPadOver(t *testing.T) {
 		ch <- err
 	}
 
-	println("@@@@@ Shit Filled")
-
 	buf = buf[:5]
 	// an append cause pad, and client should retry to next chunk
 	offset, err := c.Append(p, buf)
@@ -391,13 +389,8 @@ func TestWriteReadBigData(t *testing.T) {
 		expected[i] = byte(i%26 + 'a')
 	}
 
-	// println("!!!this is data")
-	// println(string(expected))
-
 	// write large data
 	ch <- c.Write(p, gfs.MaxChunkSize/2, expected)
-
-	log.Info("### hahaha big write finished")
 
 	// read
 	buf := make([]byte, size)
@@ -408,13 +401,9 @@ func TestWriteReadBigData(t *testing.T) {
 		t.Error("size: ", size, " read: ", n)
 		t.Error("read counter is wrong")
 	}
-	// log.Info("### read data: ", string(buf))
-	// log.Info("### should be: ", string(expected))
 	if !reflect.DeepEqual(expected, buf) {
 		t.Error("read wrong data")
 	}
-
-	log.Info("### great read")
 
 	// test read at EOF
 	n, err = c.Read(p, gfs.MaxChunkSize/2+gfs.Offset(size), buf)
@@ -457,6 +446,27 @@ func TestComprehensiveOperation(t *testing.T) {
 		line = append(line, make(chan gfs.Path, N*200))
 	}
 
+	// Hard !!
+	go func() {
+		return
+		i := 1
+		cs[i-1].Shutdown()
+		time.Sleep(gfs.ServerTimeout + gfs.LeaseExpire)
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			j := (i - 1 + csNum) % csNum
+			jj := strconv.Itoa(j)
+			cs[i].Shutdown()
+			cs[j] = chunkserver.NewAndServe(csAdd[j], mAdd, path.Join(root, "cs"+jj))
+			i = (i + 1) % csNum
+			time.Sleep(gfs.ServerTimeout + gfs.LeaseExpire)
+		}
+	}()
+
 	// create
 	var wg0 sync.WaitGroup
 	var createCt Counter
@@ -475,7 +485,7 @@ func TestComprehensiveOperation(t *testing.T) {
 					x := createCt.Next()
 					p := gfs.Path(fmt.Sprintf("/haha%v.txt", x))
 
-					fmt.Println("create ", p)
+					//fmt.Println("create ", p)
 					err := c.Create(p)
 					if err != nil {
 						t.Error(err)
@@ -502,7 +512,7 @@ func TestComprehensiveOperation(t *testing.T) {
 			for p := range line[0] {
 				x := sendCt.Next()
 
-				fmt.Println("***append ", p, "  ", string([]byte(fmt.Sprintf("%10d,", x))))
+				//fmt.Println("append ", p, "  ", tmp)
 				_, err := c.Append(p, []byte(fmt.Sprintf("%10d,", x)))
 				if err != nil {
 					t.Error(err)
@@ -541,13 +551,13 @@ func TestComprehensiveOperation(t *testing.T) {
 					continue
 				}
 				buf = buf[:n-1]
-				fmt.Println("read ", p, " at ", pos, " : ", string(buf))
+				//fmt.Println("read ", p, " at ", pos, " : ", string(buf))
 
 				lock2.Lock()
 				for _, v := range strings.Split(string(buf), ",") {
 					i, err := strconv.Atoi(strings.TrimSpace(v))
 					if err != nil {
-						t.Error("fuck")
+						t.Error(err)
 					}
 					receiveData[i]++
 				}

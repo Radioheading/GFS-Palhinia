@@ -58,7 +58,10 @@ func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 		for {
 			select {
 			case <-m.shutdown:
-				return
+				{
+					print("close rpc channel\n")
+					return
+				}
 			default:
 			}
 			conn, err := m.l.Accept()
@@ -164,17 +167,20 @@ func (m *Master) Shutdown() {
 		log.Error("Persist master meta error: ", err)
 	}
 
+	print("close master channel\n")
 	close(m.shutdown)
-	m.l.Close()
+	// m.l.Close()
 }
 
 // BackgroundActivity does all the background activities:
 // dead chunkserver handling, garbage collection, stale replica detection, etc
 func (m *Master) BackgroundActivity() error {
+	log.Info("Master background activity...")
+	log.Info("RemoveServers...")
 	if err := m.RemoveServers(); err != nil {
 		return err
 	}
-
+	log.Info("ReReplicateChunks...")
 	if err := m.ReReplicateChunks(); err != nil {
 		return err
 	}
@@ -212,7 +218,7 @@ func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) 
 
 	var serverStatusReply gfs.GetServerStatusReply
 
-	err := util.Call(args.Address, "ChunkServer.RPCServerStatus", gfs.GetServerStatusArg{}, &serverStatusReply)
+	err := util.Call(args.Address, "ChunkServer.RPCGetServerStatus", gfs.GetServerStatusArg{}, &serverStatusReply)
 
 	if err != nil {
 		return err

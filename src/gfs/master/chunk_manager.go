@@ -28,11 +28,11 @@ type chunkManager struct {
 // ping each address when master restarts
 
 type persistChunkManager struct {
-	versions     []gfs.ChunkVersion
-	handles      []gfs.ChunkHandle
-	paths        []gfs.Path
-	file_handles [][]gfs.ChunkHandle
-	numHandles   gfs.ChunkHandle
+	Versions    []gfs.ChunkVersion
+	Handles     []gfs.ChunkHandle
+	Paths       []gfs.Path
+	FileHandles [][]gfs.ChunkHandle
+	NumHandles  gfs.ChunkHandle
 }
 
 type chunkInfo struct {
@@ -71,17 +71,17 @@ func (cm *chunkManager) Persist() persistChunkManager {
 
 	for handle, info := range cm.chunk {
 		info.RLock()
-		ret.versions = append(ret.versions, info.version)
+		ret.Versions = append(ret.Versions, info.version)
 		info.RUnlock()
-		ret.handles = append(ret.handles, handle)
+		ret.Handles = append(ret.Handles, handle)
 	}
 
 	for path, info := range cm.file {
-		ret.paths = append(ret.paths, path)
-		ret.file_handles = append(ret.file_handles, info.handles)
+		ret.Paths = append(ret.Paths, path)
+		ret.FileHandles = append(ret.FileHandles, info.handles)
 	}
 
-	ret.numHandles = cm.numChunkHandle
+	ret.NumHandles = cm.numChunkHandle
 
 	return ret
 }
@@ -90,27 +90,27 @@ func (cm *chunkManager) antiPersist(pcm persistChunkManager) {
 	cm.Lock()
 	defer cm.Unlock()
 
-	for i, handle := range pcm.handles {
+	for i, handle := range pcm.Handles {
 		info := &chunkInfo{
 			location: util.ArraySet{},
 			primary:  "",
 			expire:   time.Now(),
 			path:     "",
-			version:  pcm.versions[i],
+			version:  pcm.Versions[i],
 		}
 
 		cm.chunk[handle] = info
 	}
 
-	for i, path := range pcm.paths {
+	for i, path := range pcm.Paths {
 		info := &fileInfo{
-			handles: pcm.file_handles[i],
+			handles: pcm.FileHandles[i],
 		}
 
 		cm.file[path] = info
 	}
 
-	cm.numChunkHandle = pcm.numHandles
+	cm.numChunkHandle = pcm.NumHandles
 }
 
 // RegisterReplica adds a replica for a chunk

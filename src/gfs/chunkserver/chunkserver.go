@@ -177,7 +177,7 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 		persistTick := time.Tick(gfs.MasterPersistTick)
 		garbageTick := time.Tick(gfs.GarbageCollectionTick)
 		heartbeatTick := time.Tick(gfs.HeartbeatInterval)
-		quickStart := make(chan struct{})
+		quickStart := make(chan struct{}, 1)
 		quickStart <- struct{}{}
 		for {
 			select {
@@ -194,7 +194,10 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 				}
 				cs.garbageList = make([]gfs.ChunkHandle, 0)
 			case <-quickStart:
-				cs.heartbeatRoutine()
+				{
+					log.Info("quick start")
+					cs.heartbeatRoutine()
+				}
 			case <-heartbeatTick:
 				cs.heartbeatRoutine()
 			}
