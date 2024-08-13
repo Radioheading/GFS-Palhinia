@@ -396,6 +396,8 @@ func (cm *chunkManager) GetUnderReplicatedChunks() []gfs.ChunkHandle {
 				chunkInfo.RLock()
 				if chunkInfo.location.Size() < gfs.MinimumNumReplicas {
 					ret = append(ret, handle)
+					need_map[handle] = true
+					log.Info("&add needed chunk ", handle)
 				}
 				chunkInfo.RUnlock()
 			}

@@ -411,6 +411,7 @@ func (m *Master) RemoveServers() error {
 	obsoleteServers := m.csm.GetObsoleteServers()
 
 	for _, server := range obsoleteServers {
+		log.Info("$$RemoveServers: ", server)
 		handles, err := m.csm.RemoveServer(server)
 
 		if err != nil {
@@ -434,15 +435,19 @@ func (m *Master) ReReplicateChunks() error {
 
 	for _, handle := range handles {
 		ck := m.cm.chunk[handle]
-
+		log.Info("handle: ", handle, ", num of replicas: ", ck.location.Size(), ", expire time", ck.expire.Sub(time.Now()))
 		if ck.expire.Before(time.Now()) {
+			log.Info("ReReplicateChunks: ", handle)
 			ck.Lock()
 
 			from, to, err := m.csm.ChooseReReplication(handle)
 
+			log.Info("$$ReReplicateChunks from ", from, " to ", to)
+
 			if err != nil {
 				ck.Unlock()
-				return err
+				log.Warning("ChooseReReplication error: ", err)
+				continue
 			}
 
 			err = util.Call(to, "ChunkServer.RPCCreateChunk", gfs.CreateChunkArg{Handle: handle}, &gfs.CreateChunkReply{})

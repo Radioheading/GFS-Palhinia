@@ -185,6 +185,7 @@ func (csm *chunkServerManager) RemoveServer(addr gfs.ServerAddress) (handles []g
 			}
 		}
 	}
+	delete(csm.servers, addr)
 	return
 }
 
@@ -193,9 +194,13 @@ func (csm *chunkServerManager) GetObsoleteServers() []gfs.ServerAddress {
 	csm.RLock()
 	defer csm.RUnlock()
 
+	log.Info("$$GetObsoleteServers")
+
 	obsolete := make([]gfs.ServerAddress, 0)
 	for addr, server := range csm.servers {
+		log.Info("addr: ", addr, "last heartbeat: ", server.lastHeartbeat, " now: ", time.Now(), " timeout: ", gfs.ServerTimeout)
 		if server.lastHeartbeat.Add(gfs.ServerTimeout).Before(time.Now()) {
+			log.Info("$$GetObsoleteServers: ", addr)
 			obsolete = append(obsolete, addr)
 		}
 	}

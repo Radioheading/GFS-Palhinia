@@ -51,9 +51,9 @@ type chunkInfo struct {
 
 type persistChunkInfo struct {
 	Handle        gfs.ChunkHandle
-	length        gfs.Offset
-	version       gfs.ChunkVersion
-	newestVersion gfs.ChunkVersion
+	Length        gfs.Offset
+	Version       gfs.ChunkVersion
+	NewestVersion gfs.ChunkVersion
 }
 
 func (cs *ChunkServer) persistChunkServer() {
@@ -62,18 +62,19 @@ func (cs *ChunkServer) persistChunkServer() {
 
 	var persisted []persistChunkInfo
 
-	cs.chunkProtector.RLock()
-	defer cs.chunkProtector.RUnlock()
-
 	for k, v := range cs.chunk {
+		log.Info("^^encoded address: ", cs.address, "persisting chunk: ", k, " version: ", v.version, " length: ", v.length)
 		persisted = append(persisted, persistChunkInfo{
 			Handle:        k,
-			length:        v.length,
-			version:       v.version,
-			newestVersion: v.newestVersion,
+			Length:        v.length,
+			Version:       v.version,
+			NewestVersion: v.newestVersion,
 		})
 	}
 
+	for _, v := range persisted {
+		log.Info("^^encoded address: ", cs.address, "persisted chunk: ", v.Handle, " version: ", v.Version, " length: ", v.Length)
+	}
 	filename := path.Join(cs.serverRoot, "/chunkserver")
 	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, 0755)
 
@@ -84,6 +85,7 @@ func (cs *ChunkServer) persistChunkServer() {
 	defer file.Close()
 
 	encoder := gob.NewEncoder(file)
+	log.Println("persisted: ", len(persisted))
 	err = encoder.Encode(persisted)
 
 	if err != nil {
@@ -112,14 +114,17 @@ func (cs *ChunkServer) restoreChunkServer() {
 		log.Fatal("decode error: ", err)
 	}
 
+	log.Println("antipersisted: ", len(persisted))
+
 	cs.chunkProtector.Lock()
 	defer cs.chunkProtector.Unlock()
 
 	for _, v := range persisted {
+		log.Info("^^address: ", cs.address, "restoring chunk: ", v.Handle, " version: ", v.Version, " length: ", v.Length)
 		cs.chunk[v.Handle] = &chunkInfo{
-			length:        v.length,
-			version:       v.version,
-			newestVersion: v.newestVersion,
+			length:        v.Length,
+			version:       v.Version,
+			newestVersion: v.NewestVersion,
 			mutations:     make(map[gfs.ChunkVersion]*Mutation),
 		}
 	}
