@@ -83,7 +83,7 @@ const (
 	DownloadBufferExpire = 2 * time.Minute
 	DownloadBufferTick   = 10 * time.Second
 
-	LeaseBufferTick = 500 * time.Second
+	LeaseBufferTick = 500 * time.Millisecond
 
 	// master
 	ServerCheckInterval   = 500 * time.Millisecond

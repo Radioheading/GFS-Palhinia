@@ -844,7 +844,7 @@ func TestDiskError(t *testing.T) {
 	}
 	fmt.Println("###### Waiting for recovery")
 	time.Sleep(gfs.ServerTimeout + gfs.LeaseExpire)
-
+	fmt.Println("bushi, gemener")
 	_, err = c.Append(p, msg)
 	ch <- err
 

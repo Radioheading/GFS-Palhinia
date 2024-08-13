@@ -31,6 +31,8 @@ func newLeaseBuffer(master gfs.ServerAddress, tick time.Duration) *LeaseBuffer {
 			buf.Lock()
 			for handle, lease := range buf.buffer {
 				if lease.Expire.Before(time.Now()) {
+					// use color blue to show log
+					log.Printf("\033[34mClient\033[0m: Lease of chunk %v expired", handle)
 					delete(buf.buffer, handle)
 				}
 			}
@@ -42,6 +44,7 @@ func newLeaseBuffer(master gfs.ServerAddress, tick time.Duration) *LeaseBuffer {
 }
 
 func (buf *LeaseBuffer) GetLease(handle gfs.ChunkHandle) (*gfs.Lease, error) {
+	log.Info("%%praying")
 	buf.Lock()
 	defer buf.Unlock()
 	lease, ok := buf.buffer[handle]
