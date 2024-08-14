@@ -455,8 +455,11 @@ func (m *Master) ReReplicateChunks() error {
 				return err
 			}
 
+			log.Warning("ReReplicateChunks: ", handle, " from ", from, " to ", to)
+
 			err = util.Call(from, "ChunkServer.RPCSendCopy", gfs.SendCopyArg{Handle: handle, Address: to}, &gfs.SendCopyReply{})
 			if err != nil {
+				log.Info("SendCopy error: ", err)
 				return err
 			}
 
@@ -465,6 +468,7 @@ func (m *Master) ReReplicateChunks() error {
 				Handle:  handle,
 			})
 			if err != nil {
+				log.Warning("HireChunkServer error: ", err)
 				return err
 			}
 

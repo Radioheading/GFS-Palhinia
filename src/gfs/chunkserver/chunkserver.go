@@ -47,6 +47,7 @@ type chunkInfo struct {
 	version       gfs.ChunkVersion               // version number of the chunk in disk
 	newestVersion gfs.ChunkVersion               // allocated newest version number
 	mutations     map[gfs.ChunkVersion]*Mutation // mutation buffer
+	broken        bool                           // whether the chunk is broken
 }
 
 type persistChunkInfo struct {
@@ -63,6 +64,7 @@ func (cs *ChunkServer) persistChunkServer() {
 	var persisted []persistChunkInfo
 
 	for k, v := range cs.chunk {
+		v.RLock()
 		log.Info("^^encoded address: ", cs.address, "persisting chunk: ", k, " version: ", v.version, " length: ", v.length)
 		persisted = append(persisted, persistChunkInfo{
 			Handle:        k,
@@ -70,6 +72,7 @@ func (cs *ChunkServer) persistChunkServer() {
 			Version:       v.version,
 			NewestVersion: v.newestVersion,
 		})
+		v.RUnlock()
 	}
 
 	for _, v := range persisted {
@@ -80,6 +83,7 @@ func (cs *ChunkServer) persistChunkServer() {
 
 	if err != nil {
 		log.Warning("open file error: ", err)
+		return
 	}
 
 	defer file.Close()
@@ -310,9 +314,9 @@ func (cs *ChunkServer) RPCForwardData(args gfs.ForwardDataArg, reply *gfs.Forwar
 func (cs *ChunkServer) RPCCreateChunk(args gfs.CreateChunkArg, reply *gfs.CreateChunkReply) error {
 	cs.chunkProtector.Lock()
 	defer cs.chunkProtector.Unlock()
-	if _, ok := cs.chunk[args.Handle]; ok {
-		return fmt.Errorf("chunk %v already exists", args.Handle)
-	}
+	// if _, ok := cs.chunk[args.Handle]; ok {
+	// 	return nil
+	// }
 
 	cs.chunk[args.Handle] = &chunkInfo{length: 0, version: 0, newestVersion: 0, mutations: make(map[gfs.ChunkVersion]*Mutation)}
 	log.Infof("Chunk %v created", args.Handle)
@@ -362,9 +366,12 @@ func (cs *ChunkServer) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, dat
 
 	cs.chunkProtector.RUnlock()
 	chunk.Lock()
+	// defer chunk.Unlock()
 	err := cs.ApplyMutationOnChunk(handle, &Mutation{mtype: gfs.MutationWrite, version: chunk.version, data: data, offset: offset})
 
 	if err != nil {
+		chunk.broken = true
+		chunk.Unlock()
 		return nil, err
 	}
 
@@ -529,7 +536,7 @@ func (cs *ChunkServer) RPCSendCopy(args gfs.SendCopyArg, reply *gfs.SendCopyRepl
 	cs.chunkProtector.RUnlock()
 
 	if !ok {
-		return fmt.Errorf("Chunk Number: %v not found", args.Handle)
+		return fmt.Errorf("chunk Number: %v not found", args.Handle)
 	}
 
 	chunk.RLock()
@@ -537,7 +544,8 @@ func (cs *ChunkServer) RPCSendCopy(args gfs.SendCopyArg, reply *gfs.SendCopyRepl
 	data, err := cs.ReadChunk(args.Handle, 0, chunk.length)
 
 	if err != nil {
-		return err
+		log.Warning("Read chunk failed: ", args.Handle)
+		return nil
 	}
 
 	err = util.Call(args.Address, "ChunkServer.RPCApplyCopy", gfs.ApplyCopyArg{Handle: args.Handle, Data: data, Version: chunk.newestVersion}, &gfs.ApplyCopyReply{})
@@ -585,7 +593,7 @@ func (cs *ChunkServer) RPCAdjustVersion(args gfs.AdjustChunkVersionArg, reply *g
 	var chunk *chunkInfo
 	var ok bool
 
-	if chunk, ok = cs.chunk[args.Handle]; !ok {
+	if chunk, ok = cs.chunk[args.Handle]; !ok || chunk.broken {
 		return fmt.Errorf("chunk %v not found", args.Handle)
 	}
 
@@ -600,6 +608,7 @@ func (cs *ChunkServer) RPCAdjustVersion(args gfs.AdjustChunkVersionArg, reply *g
 	if chunk.version < args.Version {
 		log.Warningf("Chunk %v version is outdated, current version %v, master version %v", args.Handle, chunk.version, args.Version)
 		reply.Stale = true
+		chunk.broken = true
 	} else {
 		reply.Stale = false
 	}

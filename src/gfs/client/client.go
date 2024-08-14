@@ -208,6 +208,8 @@ func (c *Client) Append(path gfs.Path, data []byte) (offset gfs.Offset, err erro
 				break
 			}
 
+			log.Info("@@@chunk ", handle, " failed at appending, retry again: ", err)
+
 			if e, ok := err.(gfs.Error); ok && e.Code == gfs.AppendExceedChunkSize || e.Code == gfs.LeaseHasExpired {
 				break
 			}
@@ -217,6 +219,7 @@ func (c *Client) Append(path gfs.Path, data []byte) (offset gfs.Offset, err erro
 		}
 
 		if err == nil {
+			log.Info("\033[34mAppend\033[0m: has successfully appended data to chunk ", handle)
 			break // successful write in the chunk
 		} else if e, ok := err.(gfs.Error); ok && e.Code != gfs.AppendExceedChunkSize {
 			break
