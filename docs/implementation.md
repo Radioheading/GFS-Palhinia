@@ -40,3 +40,20 @@ The full process of GC can be described as follows:
 
 1. during `getLeaseHolder()`, we check all the servers which are supposed to hold the given handle, and return with those who don't have or have obsolete version
 2. we maintain such stale servers in the `chunkServerManager`, and during the heartbeat of a `chunkServer`, it gets such information from the `chunkServerManger`. Thus, during the GC routine, we can delete these chunks.
+
+## Snapshot
+
+### Brief Description
+
+Snapshot makes a copy of a file in a astonishing fast speed, and wouldn't cause any interruption to any other operation, we use snapshot to make copy of a great dataset or enable quick rollback.
+
+When master node get a snapshot request, it first cancels **all the leases of the chunks that the file holds**, which ensures that every subsequent write operation must contact master to get the lease holder.
+
+After cancelling all the leases, master node records this on the disk, and copy the file/directory's metadata, while pointing the file to **the address of the source file**.
+
+After snapshot, when client wants to write data, it deploys **copy-on-write**:
+
+- notice that the ref-cnt of chunk C is *larger than one*
+- ask all the servers with C to make a copy C'
+- make a new ChunkHandle for C' and get a primary
+- the following process is same to that of normal client write operation.
