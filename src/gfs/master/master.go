@@ -482,3 +482,26 @@ func (m *Master) ReReplicateChunks() error {
 
 	return nil
 }
+
+// RPCMakeSnapshot is called by client to make a snapshot of a file
+func (m *Master) RPCMakeSnapshot(args gfs.MakeSnapshotArg, reply *gfs.MakeSnapshotReply) error {
+	raw_path, filename := args.Path.ParseLeafname()
+	paths := raw_path.GetPaths()
+
+	new_node, err := m.nm.lockParents(paths, true)
+	defer m.nm.unlockParents(paths, true)
+
+	if err != nil {
+		return err
+	}
+
+	if (new_node.children[filename] == nil) {
+		return fmt.Errorf("file %v does not exist", filename)
+	}
+
+	file := new_node.children[filename]
+	file.Lock()
+	defer file.Unlock()
+	log.Info("\033[1;31mRPCMakeSnapshot: ", filename, "\033[0m")
+	
+

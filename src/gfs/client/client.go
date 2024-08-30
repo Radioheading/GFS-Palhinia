@@ -380,5 +380,9 @@ func (c *Client) AppendChunk(handle gfs.ChunkHandle, data []byte) (offset gfs.Of
 	}
 
 	return r.Offset, nil
+}
 
+// MakeSnapshot makes a snapshot of the file at specific path.
+func (c *Client) MakeSnapshot(path gfs.Path) error {
+	return util.Call(c.master, "Master.RPCMakeSnapshot", gfs.MakeSnapshotArg{Path: path}, &gfs.MakeSnapshotReply{})
 }

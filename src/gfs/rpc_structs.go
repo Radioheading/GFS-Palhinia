@@ -193,3 +193,11 @@ type HireChunkServerArg struct {
 type HireChunkServerReply struct {
 	ErrorCode ErrorCode
 }
+
+type MakeSnapshotArg struct {
+	Path Path
+}
+
+type MakeSnapshotReply struct {
+	ErrorCode ErrorCode
+}
