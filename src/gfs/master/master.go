@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -495,7 +496,7 @@ func (m *Master) RPCMakeSnapshot(args gfs.MakeSnapshotArg, reply *gfs.MakeSnapsh
 		return err
 	}
 
-	if (new_node.children[filename] == nil) {
+	if new_node.children[filename] == nil {
 		return fmt.Errorf("file %v does not exist", filename)
 	}
 
@@ -503,5 +504,47 @@ func (m *Master) RPCMakeSnapshot(args gfs.MakeSnapshotArg, reply *gfs.MakeSnapsh
 	file.Lock()
 	defer file.Unlock()
 	log.Info("\033[1;31mRPCMakeSnapshot: ", filename, "\033[0m")
-	
 
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(int(file.chunks))
+	var wg_lock sync.RWMutex
+
+	for idx := int64(0); idx < file.chunks; idx++ {
+		go func(idx int64) {
+			handle, err := m.cm.GetChunk(args.Path, gfs.ChunkIndex(idx))
+			if err != nil {
+				wg_lock.Lock()
+				reply.ErrorCode = 1
+				wg_lock.Unlock()
+				return
+			}
+
+			chunkInfo, err := m.cm.GetChunkInfo(handle)
+			if err != nil {
+				wg_lock.Lock()
+				reply.ErrorCode = 2
+				wg_lock.Unlock()
+				return
+			}
+
+			chunkInfo.Lock()
+			defer chunkInfo.Unlock()
+			if chunkInfo.expire.After(time.Now()) {
+				// we must invalidate each lease associated with each file chunk
+				chunkInfo.expire = time.Now()
+			}
+
+			if err := m.cm.AddReferenceCount(handle); err != nil {
+				wg_lock.Lock()
+				reply.ErrorCode = 3
+				wg_lock.Unlock()
+				return
+			}
+
+			waitGroup.Done()
+		}(idx)
+	}
+
+	waitGroup.Wait()
+	return nil
+}

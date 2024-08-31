@@ -37,11 +37,12 @@ type persistChunkManager struct {
 
 type chunkInfo struct {
 	sync.RWMutex
-	location util.ArraySet     // set of replica locations
-	primary  gfs.ServerAddress // primary chunkserver
-	expire   time.Time         // lease expire time
-	path     gfs.Path
-	version  gfs.ChunkVersion
+	location       util.ArraySet     // set of replica locations
+	primary        gfs.ServerAddress // primary chunkserver
+	expire         time.Time         // lease expire time
+	path           gfs.Path
+	version        gfs.ChunkVersion
+	referenceCount int
 }
 
 type fileInfo struct {
@@ -407,4 +408,34 @@ func (cm *chunkManager) GetUnderReplicatedChunks() []gfs.ChunkHandle {
 	cm.replicasWaitlist = make([]gfs.ChunkHandle, 0)
 
 	return ret
+}
+
+// AddReferenceCount adds reference count for a primary chunkserver
+// so as to enable snapshot.
+func (cm *chunkManager) GetChunkInfo(handle gfs.ChunkHandle) (*chunkInfo, error) {
+	cm.RLock()
+	defer cm.RUnlock()
+
+	value, ok := cm.chunk[handle]
+
+	if !ok {
+		return nil, fmt.Errorf("chunk %d not found", handle)
+	}
+
+	return value, nil
+}
+
+func (cm *chunkManager) AddReferenceCount(handle gfs.ChunkHandle) error {
+	cm.RLock()
+	defer cm.RUnlock()
+
+	value, ok := cm.chunk[handle]
+
+	if !ok {
+		return fmt.Errorf("chunk %d not found", handle)
+	}
+
+	value.referenceCount++
+
+	return nil
 }
