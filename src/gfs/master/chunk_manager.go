@@ -263,6 +263,10 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error, [
 		ret.primary = chunk.primary
 		ret.expire = chunk.expire
 
+		if chunk.referenceCount > 0 { // have a reference, deploy COW
+
+		}
+
 		for _, addr := range chunk.location.GetAll() {
 			if addr != chunk.primary {
 				if serverAddr, ok := addr.(gfs.ServerAddress); ok {
@@ -438,4 +442,25 @@ func (cm *chunkManager) AddReferenceCount(handle gfs.ChunkHandle) error {
 	value.referenceCount++
 
 	return nil
+}
+
+// DeployCopyOnWrite deploys copy-on-write for a chunk.
+func (cm *chunkManager) DeployCopyOnWrite(myChunkInfo *chunkInfo) error {
+	if myChunkInfo.referenceCount == 0 {
+		return nil
+	}
+
+	cm.Lock()
+	defer cm.Unlock()
+	cm.numChunkHandle++
+	nextHandle := cm.numChunkHandle
+	cm.chunk[nextHandle] = &chunkInfo{
+		location: myChunkInfo.location,
+		primary:  myChunkInfo.primary,
+		expire:   time.Now(),
+		version:  myChunkInfo.version,
+	}
+
+	cm.Unlock()
+	myChunkInfo.referenceCount--
 }

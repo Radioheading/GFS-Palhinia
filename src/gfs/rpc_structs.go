@@ -209,3 +209,12 @@ type InvalidateLeaseArg struct {
 type InvalidateLeaseReply struct {
 	ErrorCode ErrorCode
 }
+
+type CopyOnWriteArg struct {
+	SrcHandle  ChunkHandle
+	DestHandle ChunkHandle
+}
+
+type CopyOnWriteReply struct {
+	ErrorCode ErrorCode
+}

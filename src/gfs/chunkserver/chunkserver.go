@@ -689,3 +689,32 @@ func (cs *ChunkServer) RPCInvalidateLease(args gfs.InvalidateLeaseArg, reply *gf
 	cs.chunk[args.Handle].invalidated = true
 	return nil
 }
+
+// RPCCopyOnWrite is called by master to copy all chunks from a single handle to a new one
+func (cs *ChunkServer) RPCCopyOnWrite(args gfs.CopyOnWriteArg, reply *gfs.CopyOnWriteReply) error {
+	cs.chunkProtector.RLock()
+	chunk, ok := cs.chunk[args.SrcHandle]
+	if !ok || chunk.broken {
+		cs.chunkProtector.RUnlock()
+		return fmt.Errorf("chunk %v not found", args.SrcHandle)
+	}
+	cs.chunkProtector.RUnlock()
+
+	cs.chunk[args.DestHandle] = &chunkInfo{length: chunk.length,
+		version:       chunk.version,
+		newestVersion: chunk.newestVersion,
+		mutations:     make(map[gfs.ChunkVersion]*Mutation),
+		invalidated:   false}
+
+	var chunkData []byte
+	var err error
+	if chunkData, err = cs.ReadChunk(args.SrcHandle, 0, chunk.length); err != nil {
+		log.Fatal(err)
+		return err
+	}
+	if _, err = cs.WriteChunk(args.DestHandle, 0, chunkData); err != nil {
+		log.Fatal(err)
+		return err
+	}
+	return nil
+}
