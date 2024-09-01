@@ -263,9 +263,7 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error, [
 		ret.primary = chunk.primary
 		ret.expire = chunk.expire
 
-		if chunk.referenceCount > 0 { // have a reference, deploy COW
-
-		}
+		cm.DeployCopyOnWrite(chunk, handle)
 
 		for _, addr := range chunk.location.GetAll() {
 			if addr != chunk.primary {
@@ -445,22 +443,33 @@ func (cm *chunkManager) AddReferenceCount(handle gfs.ChunkHandle) error {
 }
 
 // DeployCopyOnWrite deploys copy-on-write for a chunk.
-func (cm *chunkManager) DeployCopyOnWrite(myChunkInfo *chunkInfo) error {
+func (cm *chunkManager) DeployCopyOnWrite(myChunkInfo *chunkInfo, oldHandle gfs.ChunkHandle) error {
 	if myChunkInfo.referenceCount == 0 {
 		return nil
 	}
 
 	cm.Lock()
-	defer cm.Unlock()
 	cm.numChunkHandle++
 	nextHandle := cm.numChunkHandle
+	var arrayNewLocation []gfs.ServerAddress
+	for _, addr := range myChunkInfo.location.GetAll() {
+		arrayNewLocation = append(arrayNewLocation, addr.(gfs.ServerAddress))
+	}
 	cm.chunk[nextHandle] = &chunkInfo{
-		location: myChunkInfo.location,
+		location: util.ArraySet{},
 		primary:  myChunkInfo.primary,
 		expire:   time.Now(),
 		version:  myChunkInfo.version,
 	}
+	for _, addr := range arrayNewLocation {
+		cm.chunk[nextHandle].location.Add(addr)
+	}
 
 	cm.Unlock()
+	err := util.CallAll(arrayNewLocation, "ChunkServer.RPCCopyOnWrite", gfs.CopyOnWriteArg{SrcHandle: oldHandle, DestHandle: nextHandle})
+	if err != nil {
+		return err
+	}
 	myChunkInfo.referenceCount--
+	return nil
 }
