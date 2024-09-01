@@ -48,6 +48,7 @@ type chunkInfo struct {
 	newestVersion gfs.ChunkVersion               // allocated newest version number
 	mutations     map[gfs.ChunkVersion]*Mutation // mutation buffer
 	broken        bool                           // whether the chunk is broken
+	invalidated   bool                           // whether the chunk is invalidated
 }
 
 type persistChunkInfo struct {
@@ -130,6 +131,7 @@ func (cs *ChunkServer) restoreChunkServer() {
 			version:       v.Version,
 			newestVersion: v.NewestVersion,
 			mutations:     make(map[gfs.ChunkVersion]*Mutation),
+			invalidated:   false,
 		}
 	}
 
@@ -318,7 +320,7 @@ func (cs *ChunkServer) RPCCreateChunk(args gfs.CreateChunkArg, reply *gfs.Create
 	// 	return nil
 	// }
 
-	cs.chunk[args.Handle] = &chunkInfo{length: 0, version: 0, newestVersion: 0, mutations: make(map[gfs.ChunkVersion]*Mutation)}
+	cs.chunk[args.Handle] = &chunkInfo{length: 0, version: 0, newestVersion: 0, mutations: make(map[gfs.ChunkVersion]*Mutation), invalidated: false}
 	log.Infof("Chunk %v created", args.Handle)
 	return nil
 }
@@ -404,6 +406,19 @@ func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChu
 		return fmt.Errorf("DataID %v not found", args.DataID)
 	}
 
+	cs.chunkProtector.Lock()
+	var chunkInfo *chunkInfo
+	chunkInfo, ok = cs.chunk[args.DataID.Handle]
+	if !ok || chunkInfo.broken {
+		return fmt.Errorf("chunk %v not found", args.DataID.Handle)
+	}
+
+	if chunkInfo.invalidated {
+		reply.ErrorCode = gfs.LeaseHasExpired
+		return nil
+	}
+	cs.chunkProtector.Unlock()
+
 	chunk, err := cs.WriteChunk(args.DataID.Handle, args.Offset, op_data)
 
 	if err != nil || chunk == nil {
@@ -437,6 +452,19 @@ func (cs *ChunkServer) RPCAppendChunk(args gfs.AppendChunkArg, reply *gfs.Append
 	if !ok {
 		return fmt.Errorf("DataID %v not found", args.DataID)
 	}
+
+	cs.chunkProtector.Lock()
+	var myChunkInfo *chunkInfo
+	myChunkInfo, ok = cs.chunk[args.DataID.Handle]
+	if !ok || myChunkInfo.broken {
+		return fmt.Errorf("chunk %v not found", args.DataID.Handle)
+	}
+
+	if myChunkInfo.invalidated {
+		reply.ErrorCode = gfs.LeaseHasExpired
+		return nil
+	}
+	cs.chunkProtector.Unlock()
 
 	if gfs.Offset(len(op_data)) > gfs.MaxAppendSize {
 		return fmt.Errorf("append size %v out of bound", len(op_data))
@@ -646,5 +674,18 @@ func (cs *ChunkServer) RPCGetServerStatus(args gfs.GetServerStatusArg, reply *gf
 	reply.Chunks = chunks
 	reply.Versions = versions
 
+	return nil
+}
+
+// RPCInvalidateLease is called by master to invalidate the lease of a chunk during snapshots
+func (cs *ChunkServer) RPCInvalidateLease(args gfs.InvalidateLeaseArg, reply *gfs.InvalidateLeaseReply) error {
+	cs.chunkProtector.RLock()
+	defer cs.chunkProtector.RUnlock()
+
+	if _, ok := cs.chunk[args.Handle]; !ok {
+		return fmt.Errorf("chunk %v not found", args.Handle)
+	}
+
+	cs.chunk[args.Handle].invalidated = true
 	return nil
 }

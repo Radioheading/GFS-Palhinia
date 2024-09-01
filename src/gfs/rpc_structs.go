@@ -201,3 +201,11 @@ type MakeSnapshotArg struct {
 type MakeSnapshotReply struct {
 	ErrorCode ErrorCode
 }
+
+type InvalidateLeaseArg struct {
+	Handle ChunkHandle
+}
+
+type InvalidateLeaseReply struct {
+	ErrorCode ErrorCode
+}

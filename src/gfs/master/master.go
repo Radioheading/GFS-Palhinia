@@ -532,11 +532,18 @@ func (m *Master) RPCMakeSnapshot(args gfs.MakeSnapshotArg, reply *gfs.MakeSnapsh
 			if chunkInfo.expire.After(time.Now()) {
 				// we must invalidate each lease associated with each file chunk
 				chunkInfo.expire = time.Now()
+				err := util.Call(chunkInfo.primary, "ChunkServer.RPCInvalidateLease", gfs.InvalidateLeaseArg{Handle: handle}, &gfs.InvalidateLeaseReply{})
+				if err != nil {
+					wg_lock.Lock()
+					reply.ErrorCode = 3
+					wg_lock.Unlock()
+					return
+				}
 			}
 
 			if err := m.cm.AddReferenceCount(handle); err != nil {
 				wg_lock.Lock()
-				reply.ErrorCode = 3
+				reply.ErrorCode = 4
 				wg_lock.Unlock()
 				return
 			}
