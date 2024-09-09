@@ -63,10 +63,11 @@ func (cs *ChunkServer) persistChunkServer() {
 	defer cs.chunkProtector.RUnlock()
 
 	var persisted []persistChunkInfo
+	log.Info("\033[32m persisting chunkserver \033[0m")
 
 	for k, v := range cs.chunk {
+		log.Info("\033[31maddress: ", cs.address, "persisting chunk: ", k, " version: ", v.version, " length: ", v.length, "\033[0m")
 		v.RLock()
-		log.Info("^^encoded address: ", cs.address, "persisting chunk: ", k, " version: ", v.version, " length: ", v.length)
 		persisted = append(persisted, persistChunkInfo{
 			Handle:        k,
 			Length:        v.length,
@@ -75,13 +76,8 @@ func (cs *ChunkServer) persistChunkServer() {
 		})
 		v.RUnlock()
 	}
-
-	for _, v := range persisted {
-		log.Info("^^encoded address: ", cs.address, "persisted chunk: ", v.Handle, " version: ", v.Version, " length: ", v.Length)
-	}
 	filename := path.Join(cs.serverRoot, "/chunkserver")
 	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, 0755)
-
 	if err != nil {
 		log.Warning("open file error: ", err)
 		return
@@ -709,7 +705,8 @@ func (cs *ChunkServer) RPCCopyOnWrite(args gfs.CopyOnWriteArg, reply *gfs.CopyOn
 	}
 	cs.chunkProtector.RUnlock()
 
-	cs.chunk[args.DestHandle] = &chunkInfo{length: chunk.length,
+	cs.chunk[args.DestHandle] = &chunkInfo{
+		length:        chunk.length,
 		version:       chunk.version,
 		newestVersion: chunk.newestVersion,
 		mutations:     make(map[gfs.ChunkVersion]*Mutation),
@@ -722,8 +719,11 @@ func (cs *ChunkServer) RPCCopyOnWrite(args gfs.CopyOnWriteArg, reply *gfs.CopyOn
 		return err
 	}
 	if _, err = cs.WriteChunk(args.DestHandle, 0, chunkData); err != nil {
+		cs.chunk[args.DestHandle].Unlock()
 		log.Fatal(err)
 		return err
 	}
+
+	cs.chunk[args.DestHandle].Unlock()
 	return nil
 }
