@@ -415,6 +415,7 @@ func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChu
 
 	if chunkInfo.invalidated {
 		reply.ErrorCode = gfs.LeaseHasExpired
+		log.Info("\033[31mLease has expired during write on server: ", cs.address, "\033[0m")
 		return nil
 	}
 	cs.chunkProtector.Unlock()

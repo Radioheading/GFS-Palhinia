@@ -532,6 +532,7 @@ func (m *Master) RPCMakeSnapshot(args gfs.MakeSnapshotArg, reply *gfs.MakeSnapsh
 			if chunkInfo.expire.After(time.Now()) {
 				// we must invalidate each lease associated with each file chunk
 				chunkInfo.expire = time.Now()
+				log.Info("\033[1;31mRPCMakeSnapshot: expiration time on chunkInfo: ", chunkInfo.expire, "\033[0m")
 				err := util.Call(chunkInfo.primary, "ChunkServer.RPCInvalidateLease", gfs.InvalidateLeaseArg{Handle: handle}, &gfs.InvalidateLeaseReply{})
 				if err != nil {
 					wg_lock.Lock()
@@ -553,5 +554,7 @@ func (m *Master) RPCMakeSnapshot(args gfs.MakeSnapshotArg, reply *gfs.MakeSnapsh
 	}
 
 	waitGroup.Wait()
+
+	log.Info("\033[1;31mRPCMakeSnapshot: ", filename, "\033[0m\n")
 	return nil
 }

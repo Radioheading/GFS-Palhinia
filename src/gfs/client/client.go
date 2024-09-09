@@ -157,8 +157,8 @@ func (c *Client) Write(path gfs.Path, offset gfs.Offset, data []byte) error {
 			log.Info("retry write ", err)
 		}
 
-		if err != nil {
-			return err
+		if e, ok := new_err.(gfs.Error); ok && e.Code == gfs.LeaseHasExpired {
+			return new_err
 		}
 
 		cur++

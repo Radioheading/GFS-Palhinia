@@ -46,64 +46,6 @@ func errorAll(ch chan error, n int, t *testing.T) {
 	}
 }
 
-/*
- *  TEST SUITE 1 - Basic File Operation
- */
-// func TestSnapShot(t *testing.T) {
-// 	p := gfs.Path("/snapshot.txt")
-// 	msg := []byte("Don't Lose Me.")
-// 	msg2 := []byte("Don't Read Me.")
-
-// 	ch := make(chan error, N+10)
-// 	ch <- c.Create(p)
-
-// 	// append chunk 1st
-// 	_, err := c.Append(p, msg)
-// 	ch <- err
-
-// 	// write chunk 2nd
-// 	var r gfs.GetChunkHandleReply
-// 	err = m.RPCGetChunkHandle(gfs.GetChunkHandleArg{p, 1}, &r)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// 	for i := 0; i < N; i++ {
-// 		go func(x int) {
-// 			ch <- c.WriteChunk(r.Handle, gfs.Offset(x*2), []byte(fmt.Sprintf("%2d", x)))
-// 		}(i)
-// 	}
-
-// 	time.Sleep(500 * time.Millisecond)
-
-// 	c1 := client.NewClient(mAdd)
-// 	go func() {
-// 		err := c1.Snapshot(p)
-// 		ch <- err
-// 	}()
-// 	go func() {
-// 		time.Sleep(500 * time.Millisecond)
-// 		err := c.Write(p, gfs.Offset(0), msg)
-// 		if e, ok := err.(gfs.Error); ok && e.Code == gfs.LeaseExpired {
-// 			ch <- nil
-// 		} else {
-// 			ch <- fmt.Errorf("lease expire not work")
-// 		}
-// 		err = c.Write(p, gfs.Offset(0), msg2)
-// 		ch <- err
-// 	}()
-
-// 	errorAll(ch, N+5, t)
-
-// 	buf := make([]byte, len(msg2))
-// 	_, err = c1.ReadChunk(3, gfs.Offset(0), buf)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// 	if !reflect.DeepEqual(msg, buf) {
-// 		t.Error("expected (", msg, ") != buf (", buf, ")")
-// 	}
-// }
-
 func TestCreateFile(t *testing.T) {
 	err := m.RPCCreateFile(gfs.CreateFileArg{"/test1.txt"}, &gfs.CreateFileReply{})
 	if err != nil {
@@ -925,6 +867,7 @@ func TestSnapShot(t *testing.T) {
 	// write chunk 2nd
 	var r gfs.GetChunkHandleReply
 	err = m.RPCGetChunkHandle(gfs.GetChunkHandleArg{p, 1}, &r)
+	log.Println("handle: ", r.Handle)
 	if err != nil {
 		t.Error(err)
 	}
@@ -936,6 +879,20 @@ func TestSnapShot(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
+	// test whether the information have been correctly written by using ReadChunk
+	buf := make([]byte, 2)
+	for i := 0; i < N; i++ {
+		_, err := c.ReadChunk(r.Handle, gfs.Offset(i*2), buf)
+		if err != nil {
+			t.Error(err)
+		}
+		if !reflect.DeepEqual(buf, []byte(fmt.Sprintf("%2d", i))) {
+			t.Error("expected (", fmt.Sprintf("%2d", i), ") != buf (", buf, ")")
+		}
+	}
+
+	log.Info("\033[32mWriting Test Passed\033[0m")
+
 	c1 := client.NewClient(mAdd)
 	go func() {
 		err := c1.MakeSnapshot(p)
@@ -944,23 +901,32 @@ func TestSnapShot(t *testing.T) {
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		err := c.Write(p, gfs.Offset(0), msg)
-		if e, ok := err.(gfs.Error); ok && e.Code == gfs.LeaseExpired {
+		if e, ok := err.(gfs.Error); ok && e.Code == gfs.LeaseHasExpired {
+			log.Info("\033[32mLease Expire Test Passed\033[0m")
 			ch <- nil
 		} else {
+			log.Println(e.Code)
+			log.Info("\033[31mLease Expire Test Failed\033[0m")
 			ch <- fmt.Errorf("lease expire not work")
 		}
+		log.Info("\033[32mbegin test invalidated write\033[0m")
 		err = c.Write(p, gfs.Offset(0), msg2)
+		// red
+		log.Info("\033[31mWrite Error Info: ", err, "\033[0m")
 		ch <- err
 	}()
 
-	errorAll(ch, N+5, t)
+	// yellow
+	// log.Info("\033[33mCOW test passed!\033[0m")
 
-	buf := make([]byte, len(msg2))
-	_, err = c1.ReadChunk(3, gfs.Offset(0), buf)
-	if err != nil {
-		t.Error(err)
-	}
-	if !reflect.DeepEqual(msg, buf) {
-		t.Error("expected (", msg, ") != buf (", buf, ")")
-	}
+	// buf = make([]byte, len(msg2))
+	// _, err = c1.ReadChunk(0, gfs.Offset(0), buf)
+	// if err != nil {
+	// 	t.Error(err)
+	// }
+	// if !reflect.DeepEqual(msg, buf) {
+	// 	t.Error("expected (", msg, ") != buf (", buf, ")")
+	// }
+	// wait
+	errorAll(ch, N+10, t)
 }

@@ -436,6 +436,7 @@ func (cm *chunkManager) AddReferenceCount(handle gfs.ChunkHandle) error {
 	if !ok {
 		return fmt.Errorf("chunk %d not found", handle)
 	}
+	log.Info("\033[1;34mAdd reference count for chunk ", handle, "\033[0m")
 
 	value.referenceCount++
 
@@ -447,10 +448,11 @@ func (cm *chunkManager) DeployCopyOnWrite(myChunkInfo *chunkInfo, oldHandle gfs.
 	if myChunkInfo.referenceCount == 0 {
 		return nil
 	}
-
 	cm.Lock()
 	cm.numChunkHandle++
 	nextHandle := cm.numChunkHandle
+
+	log.Info("\033[1;34mDeploy copy-on-write for chunk ", oldHandle, " to ", nextHandle, "\033[0m")
 	var arrayNewLocation []gfs.ServerAddress
 	for _, addr := range myChunkInfo.location.GetAll() {
 		arrayNewLocation = append(arrayNewLocation, addr.(gfs.ServerAddress))

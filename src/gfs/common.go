@@ -74,7 +74,7 @@ const (
 	RetryInterval      = 50 * time.Millisecond
 	ServerTimeout      = 1 * time.Second //
 
-	MaxChunkSize  = 128 // 512KB DEBUG ONLY 64 << 20
+	MaxChunkSize  = 512 // 512KB DEBUG ONLY 64 << 20
 	MaxAppendSize = MaxChunkSize / 4
 
 	DefaultNumReplicas = 3
