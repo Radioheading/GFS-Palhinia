@@ -327,9 +327,12 @@ func (cs *ChunkServer) RPCCreateChunk(args gfs.CreateChunkArg, reply *gfs.Create
 
 // ReadChunk reads the chunk data from disk
 func (cs *ChunkServer) ReadChunk(handle gfs.ChunkHandle, offset gfs.Offset, length gfs.Offset) ([]byte, error) {
+	log.Info("\033[32m begin read chunk: ", handle, " offset: ", offset, " length: ", length, "\033[0m")
 	cs.chunkProtector.RLock()
+	log.Info("\033[32m after read chunk: ", handle, " offset: ", offset, " length: ", length, "\033[0m")
 	if _, ok := cs.chunk[handle]; !ok {
 		cs.chunkProtector.RUnlock()
+		log.Info("\033[31mChunk ", handle, " not found on ", cs.address, "\033[0m")
 		return nil, fmt.Errorf("chunk %v not found", handle)
 	}
 
@@ -386,7 +389,8 @@ func (cs *ChunkServer) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, dat
 // RPCReadChunk is called by client, read chunk data and return
 func (cs *ChunkServer) RPCReadChunk(args gfs.ReadChunkArg, reply *gfs.ReadChunkReply) error {
 	data, err := cs.ReadChunk(args.Handle, args.Offset, gfs.Offset(args.Length))
-
+	log.Info("\033[32mReadChunk: ", args.Handle, " ", args.Offset, " ", args.Length, "\033[0m")
+	log.Info("\033[32mData to string: ", string(data), "\033[0m")
 	reply.Data = data
 
 	if err == io.EOF {
@@ -410,10 +414,12 @@ func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChu
 	var chunkInfo *chunkInfo
 	chunkInfo, ok = cs.chunk[args.DataID.Handle]
 	if !ok || chunkInfo.broken {
+		cs.chunkProtector.Unlock()
 		return fmt.Errorf("chunk %v not found", args.DataID.Handle)
 	}
 
 	if chunkInfo.invalidated {
+		cs.chunkProtector.Unlock()
 		reply.ErrorCode = gfs.LeaseHasExpired
 		log.Info("\033[31mLease has expired during write on server: ", cs.address, "\033[0m")
 		return nil
@@ -458,11 +464,13 @@ func (cs *ChunkServer) RPCAppendChunk(args gfs.AppendChunkArg, reply *gfs.Append
 	var myChunkInfo *chunkInfo
 	myChunkInfo, ok = cs.chunk[args.DataID.Handle]
 	if !ok || myChunkInfo.broken {
+		cs.chunkProtector.Unlock()
 		return fmt.Errorf("chunk %v not found", args.DataID.Handle)
 	}
 
 	if myChunkInfo.invalidated {
 		reply.ErrorCode = gfs.LeaseHasExpired
+		cs.chunkProtector.Unlock()
 		return nil
 	}
 	cs.chunkProtector.Unlock()

@@ -218,3 +218,12 @@ type CopyOnWriteArg struct {
 type CopyOnWriteReply struct {
 	ErrorCode ErrorCode
 }
+
+type SyncLeaseArg struct {
+	Handle ChunkHandle
+}
+
+type SyncLeaseReply struct {
+	ErrorCode ErrorCode
+	Expire    time.Time
+}

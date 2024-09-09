@@ -256,6 +256,9 @@ func (c *Client) GetChunkReplicas(handle gfs.ChunkHandle) ([]gfs.ServerAddress, 
 // len(data)+offset  should be within chunk size.
 func (c *Client) ReadChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byte) (int, error) {
 	location, err := c.GetChunkReplicas(handle)
+	for i := 0; i < len(location); i++ {
+		log.Info("ReadChunk: replica ", i, " ", location[i])
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -292,7 +295,7 @@ func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []by
 		return fmt.Errorf("WriteChunk: write exceeds chunk size")
 	}
 
-	// log.Info("write chunk; handle: ", handle, " offset: ", offset, " data: ", data)
+	log.Info("write chunk; handle: ", handle, " offset: ", offset, " data: ", data)
 
 	leaseBuf, err := c.buffer.GetLease(handle)
 

@@ -558,3 +558,14 @@ func (m *Master) RPCMakeSnapshot(args gfs.MakeSnapshotArg, reply *gfs.MakeSnapsh
 	log.Info("\033[1;31mRPCMakeSnapshot: ", filename, "\033[0m\n")
 	return nil
 }
+
+func (m *Master) RPCSyncLease(args gfs.SyncLeaseArg, reply *gfs.SyncLeaseReply) error {
+	log.Info("RPCSyncLease: ", args.Handle)
+	lease, err, _ := m.cm.GetLeaseHolder(args.Handle)
+	if err != nil {
+		return err
+	}
+
+	reply.Expire = lease.expire
+	return nil
+}

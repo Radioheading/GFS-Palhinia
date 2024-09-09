@@ -916,17 +916,17 @@ func TestSnapShot(t *testing.T) {
 		ch <- err
 	}()
 
-	// yellow
-	// log.Info("\033[33mCOW test passed!\033[0m")
+	time.Sleep(2000 * time.Millisecond)
+	log.Info("\033[33mCOW test passed!\033[0m")
 
-	// buf = make([]byte, len(msg2))
-	// _, err = c1.ReadChunk(0, gfs.Offset(0), buf)
-	// if err != nil {
-	// 	t.Error(err)
-	// }
-	// if !reflect.DeepEqual(msg, buf) {
-	// 	t.Error("expected (", msg, ") != buf (", buf, ")")
-	// }
-	// wait
-	errorAll(ch, N+10, t)
+	buf = make([]byte, len(msg2))
+	_, err = c1.ReadChunk(3, gfs.Offset(0), buf)
+	if err != nil {
+		t.Error(err)
+	}
+	if !reflect.DeepEqual(msg, buf) {
+		t.Error("expected (", msg, ") != buf (", buf, ")")
+	}
+
+	errorAll(ch, N+4, t)
 }
