@@ -1,9 +1,6 @@
 package master
 
-///
-
 import (
-	// "fm发“
 	"fmt"
 	"gfs"
 	"gfs/util"

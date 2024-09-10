@@ -10,7 +10,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// chunkManager manges chunks
+// chunkManager manages chunks
 type chunkManager struct {
 	sync.RWMutex
 
