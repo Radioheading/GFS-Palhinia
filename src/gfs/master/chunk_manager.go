@@ -171,7 +171,6 @@ func (cm *chunkManager) GetChunk(path gfs.Path, index gfs.ChunkIndex) (gfs.Chunk
 // note: we detect a chunkserver having obsolete version or fail to connect,
 // we add it to waitlist for garbage collection.
 func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error, []gfs.ServerAddress) {
-	log.Info("get lease holder for chunk ", handle)
 
 	cm.RLock()
 
@@ -207,7 +206,6 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error, [
 		return &ret, nil, staleServers
 
 	} else { // grant a new lease
-		log.Info("obsolete lease for chunk ", handle, " version ", chunk.version, "; grant a new lease")
 		var ret lease
 		chunk.version++
 
@@ -225,7 +223,6 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error, [
 			}
 
 			go func(a gfs.ServerAddress) {
-				log.Info("adjust chunk version for ", handle, " at ", a)
 				var r gfs.AdjustChunkVersionReply
 
 				err := util.Call(a, "ChunkServer.RPCAdjustVersion", gfs.AdjustChunkVersionArg{Handle: handle, Version: chunk.version}, &r)
@@ -235,7 +232,6 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error, [
 					serverAddr = append(serverAddr, a)
 					addrLock.Unlock()
 				} else {
-					log.Info("stale server ", a, " for chunk ", handle)
 					staleServers = append(staleServers, a)
 				}
 
@@ -305,11 +301,8 @@ func (cm *chunkManager) ExtendLease(handle gfs.ChunkHandle, primary gfs.ServerAd
 // CreateChunk creates a new chunk for path.
 // here, if some of the addresses are not available, we would append it to the waitlist.
 func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (gfs.ChunkHandle, []gfs.ServerAddress, error) {
-	log.Info("enter create chunk for ", path)
 	cm.Lock()
 	defer cm.Unlock()
-
-	log.Info("create chunk for ", path)
 
 	file_info, ok := cm.file[path]
 
@@ -400,7 +393,6 @@ func (cm *chunkManager) GetUnderReplicatedChunks() []gfs.ChunkHandle {
 				if chunkInfo.location.Size() < gfs.MinimumNumReplicas {
 					ret = append(ret, handle)
 					need_map[handle] = true
-					log.Info("&add needed chunk ", handle)
 				}
 				chunkInfo.RUnlock()
 			}
@@ -436,7 +428,6 @@ func (cm *chunkManager) AddReferenceCount(handle gfs.ChunkHandle) error {
 	if !ok {
 		return fmt.Errorf("chunk %d not found", handle)
 	}
-	log.Info("\033[1;34mAdd reference count for chunk ", handle, "\033[0m")
 
 	value.referenceCount++
 

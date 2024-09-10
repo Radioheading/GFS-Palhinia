@@ -233,16 +233,12 @@ func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) 
 		nowVersion := chunk.version
 		m.cm.RUnlock()
 
-		log.Info("previous version on addr ", args.Address, " is: ", nowVersion)
-		log.Info("now version on addr ", args.Address, " is: ", serverStatusReply.Versions[i])
-
 		if !ok || nowVersion != serverStatusReply.Versions[i] {
 			continue
 		}
 		// up-to-date chunk information
 		chunk.Lock()
 		defer chunk.Unlock()
-		log.Info("up-to-date chunk information: ", handle, " ", args.Address)
 		if (m.HireChunkServer(gfs.HireChunkServerArg{
 			Address: args.Address,
 			Handle:  handle,
@@ -271,8 +267,6 @@ func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesAr
 
 // RPCGetReplicas is called by client to find all chunkservers that hold the chunk.
 func (m *Master) RPCGetReplicas(args gfs.GetReplicasArg, reply *gfs.GetReplicasReply) error {
-	// todo: further check
-	log.Infof("RPCGetReplicas %v", args.Handle)
 	locations, err := m.cm.GetReplicas(args.Handle)
 
 	if err != nil {
@@ -312,8 +306,6 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 	raw_path, filename := args.Path.ParseLeafname()
 	paths := raw_path.GetPaths()
 
-	log.Info("RPCGetChunkHandle: ", args.Path, " ", args.Index, ", filename: ", filename)
-
 	new_node, err := m.nm.lockParents(paths, true)
 
 	if err != nil {
@@ -323,12 +315,9 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 
 	defer m.nm.unlockParents(paths, true)
 
-	log.Info("RPCGetChunkHandle: ", filename, " ", new_node)
-
 	chunk_file, ok := new_node.children[filename]
 
 	if !ok {
-		log.Info("LYD")
 		return fmt.Errorf("file %v does not exist", filename)
 	}
 
@@ -345,18 +334,13 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 
 		servers, err := m.csm.ChooseServers(gfs.DefaultNumReplicas)
 
-		log.Info("done choose servers: ", servers)
-
 		if err != nil {
-			log.Info("ChooseServers error: ", err)
 			return err
 		}
 
 		var valid_addr []gfs.ServerAddress
 
 		reply.Handle, valid_addr, err = m.cm.CreateChunk(args.Path, servers)
-
-		log.Info("CreateChunk: ", reply.Handle, " ", valid_addr)
 
 		if err != nil {
 			return err
@@ -388,7 +372,6 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 		m.csm.AddChunk(valid_addr, reply.Handle)
 		return nil
 	} else {
-		log.Info("already exists, get handle: ", args.Index)
 		reply.Handle, err = m.cm.GetChunk(args.Path, args.Index)
 		return err
 	}
@@ -412,7 +395,6 @@ func (m *Master) RemoveServers() error {
 	obsoleteServers := m.csm.GetObsoleteServers()
 
 	for _, server := range obsoleteServers {
-		log.Info("$$RemoveServers: ", server)
 		handles, err := m.csm.RemoveServer(server)
 
 		if err != nil {
@@ -436,14 +418,10 @@ func (m *Master) ReReplicateChunks() error {
 
 	for _, handle := range handles {
 		ck := m.cm.chunk[handle]
-		log.Info("handle: ", handle, ", num of replicas: ", ck.location.Size(), ", expire time", ck.expire.Sub(time.Now()))
 		if ck.expire.Before(time.Now()) {
-			log.Info("ReReplicateChunks: ", handle)
 			ck.Lock()
 
 			from, to, err := m.csm.ChooseReReplication(handle)
-
-			log.Info("$$ReReplicateChunks from ", from, " to ", to)
 
 			if err != nil {
 				ck.Unlock()
@@ -560,7 +538,6 @@ func (m *Master) RPCMakeSnapshot(args gfs.MakeSnapshotArg, reply *gfs.MakeSnapsh
 }
 
 func (m *Master) RPCSyncLease(args gfs.SyncLeaseArg, reply *gfs.SyncLeaseReply) error {
-	log.Info("RPCSyncLease: ", args.Handle)
 	lease, err, _ := m.cm.GetLeaseHolder(args.Handle)
 	if err != nil {
 		return err

@@ -61,7 +61,6 @@ func TestSnapShot(t *testing.T) {
 	// write chunk 2nd
 	var r gfs.GetChunkHandleReply
 	err = m.RPCGetChunkHandle(gfs.GetChunkHandleArg{p, 1}, &r)
-	log.Println("handle: ", r.Handle)
 	if err != nil {
 		t.Error(err)
 	}

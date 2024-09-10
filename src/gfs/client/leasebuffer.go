@@ -30,7 +30,6 @@ func newLeaseBuffer(master gfs.ServerAddress, tick time.Duration) *LeaseBuffer {
 			time.Sleep(tick)
 			buf.Lock()
 			for handle, lease := range buf.buffer {
-				log.Info("\033[34mClient\033[0m: Lease of chunk ", handle, " expire at ", lease.Expire)
 				if lease.Expire.Before(time.Now()) {
 					// use color blue to show log
 					log.Printf("\033[34mClient\033[0m: Lease of chunk %v expired", handle)
@@ -67,9 +66,6 @@ func (buf *LeaseBuffer) GetLease(handle gfs.ChunkHandle) (*gfs.Lease, error) {
 	if err = util.Call(buf.master, "Master.RPCGetPrimaryAndSecondaries", gfs.GetPrimaryAndSecondariesArg{Handle: handle}, &getPrimaryAndSecondariesReply); err != nil {
 		return nil, err
 	}
-
-	log.Info("RPCGetPrimaryAndSecondaries: ", handle, " ", getPrimaryAndSecondariesReply.Primary, " ", getPrimaryAndSecondariesReply.Expire, " ", getPrimaryAndSecondariesReply.Secondaries)
-
 	lease = &gfs.Lease{Primary: getPrimaryAndSecondariesReply.Primary, Expire: getPrimaryAndSecondariesReply.Expire, Secondaries: getPrimaryAndSecondariesReply.Secondaries}
 	buf.buffer[handle] = lease
 	return lease, nil

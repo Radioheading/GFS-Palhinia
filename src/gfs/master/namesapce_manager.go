@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"gfs"
 	"sync"
-
-	log "github.com/sirupsen/logrus"
 )
 
 type namespaceManager struct {
@@ -80,7 +78,6 @@ func (nm *namespaceManager) antiPersist(array []persistNsTree) {
 	cur_restore := make(map[int]*nsTree)
 
 	for _, v := range array {
-		log.Info("restore id: ", v.Id, " fid: ", v.Fid, " name: ", v.Name, " isDir: ", v.IsDir, " length: ", v.Length, " chunks: ", v.Chunks)
 		var u *nsTree
 		if v.Fid == 0 { // this is root
 			u = nm.root
@@ -92,13 +89,10 @@ func (nm *namespaceManager) antiPersist(array []persistNsTree) {
 		if v.Fid != 0 && cur_restore[v.Fid] != nil {
 			father := cur_restore[v.Fid]
 			father.children[v.Name] = u
-			log.Info("restore father: ", v.Fid, " name: ", v.Name)
 		}
 	}
 
 	nm.root.Unlock()
-
-	log.Info("***LYS")
 	nm.GetFileInfo(gfs.Path("/persistent/master.txt"), &gfs.GetFileInfoReply{})
 }
 
@@ -109,13 +103,11 @@ func (nm *namespaceManager) antiPersist(array []persistNsTree) {
 // If RLockLeaf = True, then acquire read-locks on /d1/d2/.../dn/leaf
 // thus, need true for read-only circumstances
 func (nm *namespaceManager) lockParents(paths []string, RLockLeaf bool) (*nsTree, error) {
-	log.Info("lockParents: ", paths)
 	cur := nm.root
 	for i := 0; i < len(paths); i++ {
 		if cur.children[paths[i]] == nil {
 			return nil, fmt.Errorf("path %v does not exist", paths[i])
 		} else {
-			log.Info("lockParents: ", paths[i])
 			cur.RLock()
 			cur = cur.children[paths[i]]
 		}
@@ -161,9 +153,6 @@ func (nm *namespaceManager) Create(p gfs.Path) error {
 		return fmt.Errorf("file %v already exists", filename)
 	}
 
-	log.Info("create file: ", filename)
-	log.Info("file path: ", raw_path)
-
 	new_node.children[filename] = &nsTree{isDir: false, length: 0, chunks: 0, children: make(map[string]*nsTree)}
 
 	return nil
@@ -192,17 +181,11 @@ func (nm *namespaceManager) Mkdir(p gfs.Path) error {
 // GetFileInfo returns the information of a file, including length, chunks, isDir
 func (nm *namespaceManager) GetFileInfo(p gfs.Path, reply *gfs.GetFileInfoReply) error {
 	raw_path, filename := p.ParseLeafname()
-	log.Info("GetFileInfo: ", raw_path, "/", filename)
 	paths := raw_path.GetPaths()
 	new_node, err := nm.lockParents(paths, true)
 	defer nm.unlockParents(paths, true)
 	if err != nil {
 		return err
-	}
-	// log.Info("$no fault in lockParents")
-
-	for name, v := range new_node.children {
-		log.Info("$GetFileInfo: ", name, " isDir: ", v.isDir, " length: ", v.length, " chunks: ", v.chunks)
 	}
 
 	if new_node.children[filename] == nil {
