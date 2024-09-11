@@ -6,6 +6,7 @@ import (
 	"gfs/client"
 	"gfs/master"
 	"gfs/util"
+	"math/rand"
 	"reflect"
 
 	"fmt"
@@ -34,7 +35,7 @@ var (
 
 const (
 	mAdd  = ":7777"
-	csNum = 5
+	csNum = 16
 	N     = 2
 )
 
@@ -43,6 +44,149 @@ func errorAll(ch chan error, n int, t *testing.T) {
 		if err := <-ch; err != nil {
 			t.Error(err)
 		}
+	}
+}
+
+const ChunkSize = 1 << 24
+
+func ConcurrentWriteFilesWithClients(numClients int) {
+	var wg sync.WaitGroup
+
+	startTime := time.Now()
+
+	for i := 0; i < numClients; i++ {
+		wg.Add(1)
+		go func(x int) {
+			defer wg.Done()
+			p := gfs.Path(fmt.Sprintf("/file_%d.txt", x))
+			m.RPCCreateFile(gfs.CreateFileArg{p}, &gfs.CreateFileReply{})
+
+			data := make([]byte, ChunkSize)
+			for j := 0; j < ChunkSize; j++ {
+				data[j] = byte(x)
+			}
+			c.Write(p, gfs.Offset(0), data)
+
+		}(i)
+	}
+
+	wg.Wait()
+
+	elapsed := time.Since(startTime)
+	fmt.Printf("aggregate time: %s\n", elapsed)
+	fmt.Printf("average speed: %.2f MB/s\n", float64(numClients*ChunkSize)/1e6/elapsed.Seconds())
+
+	file, err := os.OpenFile("write_speed_results.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println("Error opening file:", err)
+		return
+	}
+	defer file.Close()
+
+	result := fmt.Sprintf("Clients: %d, Average Write Speed: %.2f MB/s\n", numClients, float64(numClients*ChunkSize)/1e6/elapsed.Seconds())
+	if _, err := file.WriteString(result); err != nil {
+		fmt.Println("Error writing to file:", err)
+	}
+}
+
+func ConcurrentReadFilesWithClients(numClients int) {
+	var wg sync.WaitGroup
+
+	startTime := time.Now()
+
+	for i := 0; i < numClients; i++ {
+		wg.Add(1)
+		go func(x int) {
+			defer wg.Done()
+			p := gfs.Path(fmt.Sprintf("/file_%d.txt", x))
+
+			data := make([]byte, ChunkSize)
+			c.Read(p, gfs.Offset(0), data)
+
+		}(i)
+	}
+
+	wg.Wait()
+
+	elapsed := time.Since(startTime)
+	fmt.Printf("aggregate time: %s\n", elapsed)
+	fmt.Printf("average speed: %.2f MB/s\n", float64(numClients*ChunkSize)/1e6/elapsed.Seconds())
+
+	file, err := os.OpenFile("read_speed_results.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println("Error opening file:", err)
+		return
+	}
+	defer file.Close()
+
+	result := fmt.Sprintf("Clients: %d, Average Read Speed: %.2f MB/s\n", numClients, float64(numClients*ChunkSize)/1e6/elapsed.Seconds())
+	if _, err := file.WriteString(result); err != nil {
+		fmt.Println("Error writing to file:", err)
+	}
+}
+
+func ConcurrentAppendFilesWithClients(numClients int) {
+	var wg sync.WaitGroup
+
+	startTime := time.Now()
+	rand.Seed(time.Now().UnixNano())
+	randomNumber := rand.Intn(1000)
+	p := gfs.Path(fmt.Sprintf("/file_%d.txt", randomNumber))
+	m.RPCCreateFile(gfs.CreateFileArg{p}, &gfs.CreateFileReply{})
+
+	for i := 0; i < numClients; i++ {
+		wg.Add(1)
+		go func(x int) {
+			defer wg.Done()
+
+			for k := 0; k < 1024; k++ {
+				data := make([]byte, ChunkSize>>10)
+				for j := 0; j < ChunkSize>>10; j++ {
+					data[j] = byte(x)
+				}
+				c.Append(p, data)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	elapsed := time.Since(startTime)
+	fmt.Printf("aggregate time: %s\n", elapsed)
+	fmt.Printf("average speed: %.2f MB/s\n", float64(numClients*ChunkSize)/1e6/elapsed.Seconds())
+
+	file, err := os.OpenFile("append_speed_results.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println("Error opening file:", err)
+		return
+	}
+	defer file.Close()
+
+	result := fmt.Sprintf("Clients: %d, Average Append Speed: %.2f MB/s\n", numClients, float64(numClients*ChunkSize)/1e6/elapsed.Seconds())
+	if _, err := file.WriteString(result); err != nil {
+		fmt.Println("Error appending to file:", err)
+	}
+}
+
+func TestConcurrentWriteFiles(t *testing.T) {
+	clientCounts := []int{2, 4, 6, 8, 10, 12, 14}
+	for _, count := range clientCounts {
+		ConcurrentWriteFilesWithClients(count)
+	}
+}
+
+func TestConcurrentAppendFiles(t *testing.T) {
+	clientCounts := []int{2, 4, 6, 8, 10, 12, 14, 16}
+	for _, count := range clientCounts {
+		ConcurrentAppendFilesWithClients(count)
+	}
+}
+
+func TestConcurrentReadFiles(t *testing.T) {
+	clientCounts := []int{2, 4, 6, 8, 10, 12, 14}
+	for _, count := range clientCounts {
+		ConcurrentWriteFilesWithClients(count)
+		ConcurrentReadFilesWithClients(count)
 	}
 }
 
